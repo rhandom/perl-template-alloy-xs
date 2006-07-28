@@ -5,9 +5,6 @@
 
 #define sv_defined(sv) (sv && (SvIOK(sv) || SvNOK(sv) || SvPOK(sv) || SvROK(sv)))
 
-static SV* call_sv_with_args (SV*, SV*, SV*, I32, SV*);
-static bool is_private (const char*);
-
 ///----------------------------------------------------------------///
 
 static SV* call_sv_with_args (SV* code, SV* self, SV* args, I32 flags, SV* optional_obj) {
@@ -63,7 +60,7 @@ static SV* call_sv_with_args (SV* code, SV* self, SV* args, I32 flags, SV* optio
             if (sv_defined(result)) {
                 SV* errsv = get_sv("@", TRUE);
                 sv_setsv(errsv, result);
-                croak(Nullch);
+                (void)die(Nullch);
             } else {
                 ref = &PL_sv_undef;
             }
@@ -76,9 +73,32 @@ static SV* call_sv_with_args (SV* code, SV* self, SV* args, I32 flags, SV* optio
     return ref;
 }
 
-bool name_is_private (const char* name) {
+static bool name_is_private (const char* name) {
     return (*name == '_' || *name == '.') ? 1 : 0;
 }
+
+static void xs_throw (SV* self, const char* exception_type, SV* msg) {
+    dSP;
+
+    if (sv_isobject(msg)
+        && (sv_derived_from(msg, "CGI::Ex::Template::Exception")
+            || sv_derived_from(msg, "Template::Exception"))) {
+        SV* errsv = get_sv("@", TRUE);
+        sv_setsv(errsv, msg);
+        (void)die(Nullch);
+    }
+
+    PUSHMARK(SP);
+    XPUSHs(self);
+    XPUSHs(newSVpv(exception_type, 0));
+    XPUSHs(msg);
+    PUTBACK;
+    I32 n = call_method("throw", G_VOID);
+    SPAGAIN;
+    PUTBACK;
+    return;
+}
+
 
 ///----------------------------------------------------------------///
 
@@ -258,7 +278,7 @@ play_expr (_self, _var, ...)
         }
     }
 
-    HV* seen_filters;
+    HV* seen_filters = newHV();
     while (sv_defined(ref)) {
 
         // check at each point if the rurned thing was a code
@@ -331,64 +351,191 @@ play_expr (_self, _var, ...)
         // allow for scalar and filter access (this happens for every non virtual method call)
         if (! SvROK(ref)) {
             SV* table;
-            if ((table = get_sv("CGI::Ex::Template::SCALAR_OPS", TRUE))
+            if ((table = get_sv("CGI::Ex::Template::SCALAR_OPS", FALSE))
                 && SvROK(table)
                 && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
                 SvGETMAGIC(*svp);
                 ref = call_sv_with_args(*svp, _self, args, G_SCALAR, ref);
 
-            } else if ((table = get_sv("CGI::Ex::Template::LIST_OPS", TRUE)) // auto-promote to list and use list op
+            } else if ((table = get_sv("CGI::Ex::Template::LIST_OPS", FALSE)) // auto-promote to list and use list op
                 && SvROK(table)
                 && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
                 SvGETMAGIC(*svp);
                 AV* array = newAV();
                 av_push(array, ref);
                 ref = call_sv_with_args(*svp, _self, args, G_SCALAR, newRV_noinc((SV*)array));
-            //} elsif (my $filter = $self->{'FILTERS'}->{$name}    # filter configured in Template args
-            //         || $FILTER_OPS->{$name}                     # predefined filters in CET
-            //         || (UNIVERSAL::isa($name, 'CODE') && $name) # looks like a filter sub passed in the stash
-            //         || $self->list_filters->{$name}) {          # filter defined in Template::Filters
-            //
-            //    if (UNIVERSAL::isa($filter, 'CODE')) {
-            //        $ref = eval { $filter->($ref) }; # non-dynamic filter - no args
-            //        if (my $err = $@) {
-            //            $self->throw('filter', $err) if ref($err) !~ /Template::Exception$/;
-            //            die $err;
-            //        }
-            //    } elsif (! UNIVERSAL::isa($filter, 'ARRAY')) {
-            //        $self->throw('filter', "invalid FILTER entry for '$name' (not a CODE ref)");
-            //
-            //    } elsif (@$filter == 2 && UNIVERSAL::isa($filter->[0], 'CODE')) { # these are the TT style filters
-            //        eval {
-            //            my $sub = $filter->[0];
-            //            if ($filter->[1]) { # it is a "dynamic filter" that will return a sub
-            //                ($sub, my $err) = $sub->($self->context, $args ? map { $self->play_expr($_) } @$args : ());
-            //                if (! $sub && $err) {
-            //                    $self->throw('filter', $err) if ref($err) !~ /Template::Exception$/;
-            //                    die $err;
-            //                } elsif (! UNIVERSAL::isa($sub, 'CODE')) {
-            //                    $self->throw('filter', "invalid FILTER for '$name' (not a CODE ref)")
-            //                        if ref($sub) !~ /Template::Exception$/;
-            //                    die $sub;
-            //                }
-            //            }
-            //            $ref = $sub->($ref);
-            //        };
-            //        if (my $err = $@) {
-            //            $self->throw('filter', $err) if ref($err) !~ /Template::Exception$/;
-            //            die $err;
-            //        }
-            //    } else { # this looks like our vmethods turned into "filters" (a filter stored under a name)
-            //        $self->throw('filter', 'Recursive filter alias \"$name\"') if $seen_filters{$name} ++;
-            //        $var = [$name, 0, '|', @$filter, @{$var}[$i..$#$var]]; # splice the filter into our current tree
-            //        $i = 2;
-            //    }
-            //    if (scalar keys %seen_filters
-            //        && $seen_filters{$var->[$i - 5] || ''}) {
-            //        $self->throw('filter', "invalid FILTER entry for '".$var->[$i - 5]."' (not a CODE ref)");
-            //    }
             } else {
-                ref = &PL_sv_undef;
+                SV* filter = &PL_sv_undef;
+                if(svp = hv_fetch(self, "FILTERS", 7, FALSE)) { // filter configured in Template args
+                    SvGETMAGIC(*svp);
+                    table = *svp;
+                    if (SvROK(table)
+                        && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
+                        SvGETMAGIC(*svp);
+                        filter = *svp;
+                    }
+                }
+                if (! sv_defined(filter)
+                    && (table = get_sv("CGI::Ex::Template::FILTER_OPS", FALSE)) // predefined filters in CET
+                    && SvROK(table)
+                    && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
+                    SvGETMAGIC(*svp);
+                    filter = *svp;
+                }
+                if (! sv_defined(filter)
+                    && SvROK(name) // looks like a filter sub passed in the stash
+                    && SvTYPE(SvRV(name)) == SVt_PVCV) {
+                    filter = name;
+                }
+                if (! sv_defined(filter)) {
+                    PUSHMARK(SP);
+                    XPUSHs(_self);
+                    PUTBACK;
+                    n = call_method("list_filters", G_SCALAR); // filter defined in Template::Filters
+                    SPAGAIN;
+                    if (n==1) {
+                        table = POPs;
+                        if (SvROK(table)
+                            && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
+                            SvGETMAGIC(*svp);
+                            filter = *svp;
+                        }
+                    }
+                    PUTBACK;
+                }
+                if (sv_defined(filter)) {
+                    if (SvROK(filter)
+                        && SvTYPE(SvRV(filter)) == SVt_PVCV) {  // non-dynamic filter - no args
+                        PUSHMARK(SP);
+                        XPUSHs(ref);
+                        PUTBACK;
+                        n = call_sv(filter, G_SCALAR | G_EVAL);
+                        SPAGAIN;
+                        if (n == 1) ref = POPs;
+                        PUTBACK;
+                        if (SvTRUE(ERRSV)) xs_throw(_self, "filter", ERRSV);
+                    } else if (! SvROK(filter) || SvTYPE(SvRV(filter)) != SVt_PVAV) { // invalid filter
+                        SV* msg = newSVpv("invalid FILTER entry for '", 0);
+                        sv_catsv(msg, name);
+                        sv_catpv(msg, "' (not a CODE ref)");
+                        xs_throw(_self, "filter", msg);
+                    } else {
+                        AV* fa = (AV*)SvRV(filter);
+                        svp = av_fetch(fa, 0, FALSE);
+                        if (svp) SvGETMAGIC(*svp);
+                        if (av_len(fa) == 1
+                            && svp
+                            && SvROK(*svp)
+                            && SvTYPE(SvRV(*svp)) == SVt_PVCV) { // these are the TT style filters
+                            SV* coderef = *svp;
+                            svp = av_fetch(fa, 1, FALSE);
+                            if (svp) SvGETMAGIC(*svp);
+                            if (svp && SvTRUE(*svp)) { // it is a "dynamic filter" that will return a sub
+                                PUSHMARK(SP);
+                                XPUSHs(_self);
+                                PUTBACK;
+                                n = call_method("context", G_SCALAR);
+                                SPAGAIN;
+                                SV* context = (n == 1) ? POPs : Nullsv;
+                                PUTBACK;
+                                PUSHMARK(SP);
+                                XPUSHs(context);
+                                if (args && SvROK(args)) {
+                                    I32 j;
+                                    for (j = 0; j <= av_len((AV*)SvRV(args)); j++) {
+                                        svp = av_fetch((AV*)SvRV(args), j, FALSE);
+                                        if (svp) {
+                                            SvGETMAGIC(*svp);
+                                            XPUSHs(*svp);
+                                        } else {
+                                            XPUSHs(&PL_sv_undef);
+                                        }
+                                    }
+                                }
+                                PUTBACK;
+                                n = call_sv(coderef, G_ARRAY);
+                                SPAGAIN;
+                                if (SvTRUE(ERRSV)) {
+                                    PUTBACK;
+                                    xs_throw(_self, "filter", ERRSV);
+                                } else if (n >= 1) {
+                                    coderef = POPs;
+                                    SV* err = (n >= 2) ? POPs : Nullsv;
+                                    PUTBACK;
+                                    if (! SvTRUE(coderef) && SvTRUE(err)) xs_throw(_self, "filter", err);
+                                    if (! SvROK(coderef) || SvTYPE(SvRV(coderef)) != SVt_PVCV) {
+                                        if (sv_isobject(coderef)
+                                            && (sv_derived_from(coderef, "CGI::Ex::Template::Exception")
+                                                || sv_derived_from(coderef, "Template::Exception"))) {
+                                            xs_throw(_self, "filter", coderef);
+                                        }
+                                        SV* msg = newSVpv("invalid FILTER entry for '", 0);
+                                        sv_catsv(msg, name);
+                                        sv_catpv(msg, "' (not a CODE ref) (2)");
+                                        xs_throw(_self, "filter", msg);
+                                    }
+                                } else {
+                                    PUTBACK;
+                                    SV* msg = newSVpv("invalid FILTER entry for '", 0);
+                                    sv_catsv(msg, name);
+                                    sv_catpv(msg, "' (not a CODE ref) (3)");
+                                    xs_throw(_self, "filter", msg);
+                                }
+                            }
+                            // at this point - coderef should be a coderef
+                            PUSHMARK(SP);
+                            XPUSHs(ref);
+                            PUTBACK;
+                            n = call_sv(coderef, G_EVAL | G_SCALAR);
+                            SPAGAIN;
+                            ref = (n >= 1) ? POPs : &PL_sv_undef;
+                            PUTBACK;
+                            if (SvTRUE(ERRSV)) xs_throw(_self, "filter", ERRSV);
+
+                        } else { // this looks like our vmethods turned into "filters" (a filter stored under a name)
+                            svp = hv_fetch(seen_filters, name_c, name_len, FALSE);
+                            if (svp && SvTRUE(*svp)) {
+                                SV* msg = newSVpv("Recursive filter alias \"", 0);
+                                sv_catsv(msg, name);
+                                sv_catpv(msg, "\")");
+                                xs_throw(_self, "filter", msg);
+                            }
+                            hv_store(seen_filters, name_c, name_len, newSViv(1), 0);
+                            AV* newvar = newAV();
+                            av_push(newvar, name);
+                            av_push(newvar, newSViv(0));
+                            av_push(newvar, newSVpv("|", 1));
+                            I32 j;
+                            for (j = 0; j <= av_len(fa); j++) {
+                                svp = av_fetch(fa, j, FALSE);
+                                if (svp) SvGETMAGIC(*svp);
+                                av_push(newvar, svp ? *svp : &PL_sv_undef);
+                            }
+                            for (j = i; j <= av_len(var); j++) {
+                                svp = av_fetch(var, j, FALSE);
+                                if (svp) SvGETMAGIC(*svp);
+                                av_push(newvar, svp ? *svp : &PL_sv_undef);
+                            }
+                            var = newvar;
+                            i   = 2;
+                        }
+                        svp = av_fetch(var, i - 5, 0);
+                        if (svp && SvTRUE(*svp)) { // looks like its cyclic - without a coderef in sight
+                            SV*    _name = *svp;
+                            STRLEN _name_len;
+                            char*  _name_c = SvPV(_name, _name_len);
+                            svp = hv_fetch(seen_filters, _name_c, _name_len, FALSE);
+                            if (svp && SvTRUE(*svp)) {
+                                SV* msg = newSVpv("invalid FILTER entry for '", 0);
+                                sv_catsv(msg, _name);
+                                sv_catpv(msg, "' (not a CODE ref) (4)");
+                                xs_throw(_self, "filter", msg);
+                            }
+                        }
+                    }
+                } else {
+                    ref = &PL_sv_undef;
+                }
             }
 
         } else {
