@@ -10,7 +10,7 @@ static bool is_private (const char*);
 
 ///----------------------------------------------------------------///
 
-static SV* call_sv_with_args (SV* self, SV* code, SV* args, I32 flags, SV* optional_obj) {
+static SV* call_sv_with_args (SV* code, SV* self, SV* args, I32 flags, SV* optional_obj) {
     dSP;
     I32 n;
     I32 i;
@@ -260,7 +260,7 @@ play_expr (_self, _var, ...)
 
         // check at each point if the rurned thing was a code
         if (SvROK(ref) && SvTYPE(SvRV(ref)) == SVt_PVCV) {
-            ref = call_sv_with_args(_self, ref, args, G_ARRAY, Nullsv);
+            ref = call_sv_with_args(ref, _self, args, G_ARRAY, Nullsv);
             if (! sv_defined(ref)) break;
         }
 
@@ -331,7 +331,7 @@ play_expr (_self, _var, ...)
             if (SvROK(table)
                 && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
                 SvGETMAGIC(*svp);
-                ref = call_sv_with_args(_self, *svp, args, G_SCALAR, ref);
+                ref = call_sv_with_args(*svp, _self, args, G_SCALAR, ref);
 
             //} elsif ($LIST_OPS->{$name}) {                     # auto-promote to list and use list op
             //    $ref = $LIST_OPS->{$name}->([$ref], $args ? map { $self->play_expr($_) } @$args : ());
@@ -394,7 +394,7 @@ play_expr (_self, _var, ...)
                     croak("Can't locate object method \"%s\" via package %s", name_c, package);
                 } else {
                     SV* coderef = newRV_noinc((SV*)GvCV(gv));
-                    ref = call_sv_with_args(_self, coderef, args, G_ARRAY, ref);
+                    ref = call_sv_with_args(coderef, _self, args, G_ARRAY, ref);
                     if (! sv_defined(ref)) break;
                     continue;
                 }
@@ -412,7 +412,7 @@ play_expr (_self, _var, ...)
                     if (SvROK(table)
                         && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
                         SvGETMAGIC(*svp);
-                        ref = call_sv_with_args(_self, *svp, args, G_SCALAR, ref);
+                        ref = call_sv_with_args(*svp, _self, args, G_SCALAR, ref);
                     //} elsif ($Args->{'is_namespace_during_compile'}) {
                     //    return $var; # abort - can't fold namespace variable
                     } else {
@@ -437,7 +437,7 @@ play_expr (_self, _var, ...)
                     if (SvROK(table)
                         && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
                         SvGETMAGIC(*svp);
-                        ref = call_sv_with_args(_self, *svp, args, G_SCALAR, ref);
+                        ref = call_sv_with_args(*svp, _self, args, G_SCALAR, ref);
                     } else {
                         ref = &PL_sv_undef;
                     }
