@@ -3,9 +3,77 @@
 #include "XSUB.h"
 #include "ppport.h"
 
-MODULE = CGI::Ex::Template::XS		PACKAGE = CGI::Ex::Template::XS
-
 #define sv_defined(sv) (sv && (SvIOK(sv) || SvNOK(sv) || SvPOK(sv) || SvROK(sv)))
+
+static SV* call_sv_with_args (SV*, SV*, SV*, SV*);
+
+static SV* call_sv_with_args (SV* self, SV* code, SV* args, SV* optional_obj) {
+    dSP;
+    I32 n;
+    I32 i;
+    I32 j;
+    SV** svp;
+    AV* args_real = newAV();
+    if (SvROK(args)) {
+        AV* args_fake = (AV*)SvRV(args);
+        for (i = 0; i <= av_len(args_fake); i++) {
+            svp = av_fetch(args_fake, i, FALSE);
+            SvGETMAGIC(*svp);
+            PUSHMARK(SP);
+            XPUSHs(self);
+            XPUSHs(*svp);
+            PUTBACK;
+            n = call_method("play_expr", G_ARRAY);
+            SPAGAIN;
+            for (j = 0; j < n; j++) av_push(args_real, POPs);
+            PUTBACK;
+        }
+    }
+    PUSHMARK(SP);
+    if (sv_defined(optional_obj)) XPUSHs(optional_obj);
+    for (i = 0; i <= av_len(args_real); i++) {
+        svp = av_fetch(args_real, i, FALSE);
+        SvGETMAGIC(*svp);
+        XPUSHs(*svp);
+    }
+    PUTBACK;
+    n = call_sv(code, G_ARRAY);
+    SPAGAIN;
+
+    SV* ref;
+    if (n) {
+        SV* result = POPs;
+        if (sv_defined(result)) {
+            if (n == 1) {
+                ref = result;
+            } else {
+                AV* results = newAV();
+                av_extend(results, n - 1);
+                av_store(results, n - 1, result);
+                for (i = n - 2; i >= 0; i--) av_store(results, i, (SV*)POPs);
+                ref = newRV_noinc((SV*)results);
+            }
+            PUTBACK;
+        } else {
+            result = POPs;
+            PUTBACK;
+            if (sv_defined(result)) {
+                SV* errsv = get_sv("@", TRUE);
+                sv_setsv(errsv, result);
+                croak(Nullch);
+            } else {
+                ref = &PL_sv_undef;
+            }
+        }
+    } else {
+        PUTBACK;
+        ref = &PL_sv_undef;
+    }
+
+    return ref;
+}
+
+MODULE = CGI::Ex::Template::XS		PACKAGE = CGI::Ex::Template::XS
 
 PROTOTYPES: DISABLE
 
@@ -176,71 +244,8 @@ play_expr (_self, _var, ...)
 
         // check at each point if the rurned thing was a code
         if (SvROK(ref) && SvTYPE(SvRV(ref)) == SVt_PVCV) {
-            AV* args_real = newAV();
-            I32 i;
-            I32 j;
-            if (SvROK(args)) {
-                AV* args_fake = (AV*)SvRV(args);
-                for (i = 0; i <= av_len(args_fake); i++) {
-                    svp = av_fetch(args_fake, i, FALSE);
-                    SvGETMAGIC(*svp);
-                    PUSHMARK(SP);
-                    XPUSHs(_self);
-                    XPUSHs(*svp);
-                    PUTBACK;
-                    n = call_method("play_expr", G_ARRAY);
-                    SPAGAIN;
-                    for (j = 0; j < n; j++) av_push(args_real, POPs);
-                    PUTBACK;
-                }
-            }
-            PUSHMARK(SP);
-            for (i = 0; i <= av_len(args_real); i++) {
-                svp = av_fetch(args_real, i, FALSE);
-                SvGETMAGIC(*svp);
-                XPUSHs(*svp);
-            }
-            PUTBACK;
-            n = call_sv(ref, G_ARRAY);
-            SPAGAIN;
-            if (n) {
-                SV* result = POPs;
-                if (sv_defined(result)) {
-                    if (n == 1) {
-                        ref = result;
-                    } else {
-                        AV* results = newAV();
-                        av_push(results, result);
-                        for (i = 1; i <= n; i++) av_push(results, (SV*)POPs);
-                        ref = newRV_noinc((SV*)results);
-                    }
-                    PUTBACK;
-                } else {
-                    result = POPs;
-                    PUTBACK;
-                    if (sv_defined(result)) {
-                        SV* errsv = get_sv("@", TRUE);
-                        sv_setsv(errsv, result);
-                        croak(Nullch);
-                    } else {
-                        ref = &PL_sv_undef;
-                        break;
-                    }
-                }
-            } else {
-                PUTBACK;
-                ref = &PL_sv_undef;
-                break;
-            }
-            //my @results = $ref->($args ? map { $self->play_expr($_) } @$args : ());
-            //if (defined $results[0]) {
-            //    $ref = ($#results > 0) ? \@results : $results[0];
-            //} elsif (defined $results[1]) {
-            //    die $results[1]; # TT behavior - why not just throw ?
-            //} else {
-            //    $ref = undef;
-            //    last;
-            //}
+            ref = call_sv_with_args(_self, ref, args, Nullsv);
+            if (! sv_defined(ref)) break;
         }
 
         // descend one chained level
@@ -377,21 +382,17 @@ play_expr (_self, _var, ...)
 
             // method calls on objects
             if (was_dot_call && sv_isobject(ref)) {
-                //my @args = $args ? map { $self->play_expr($_) } @$args : ();
-                //my @results = eval { $ref->$name(@args) };
-                //if ($@) {
-                //    my $class = ref $ref;
-                //    die $@ if ref $@ || $@ !~ /Can\'t locate object method "\Q$name\E" via package "\Q$class\E"/;
-                //} elsif (defined $results[0]) {
-                //    $ref = ($#results > 0) ? \@results : $results[0];
-                //    next;
-                //} elsif (defined $results[1]) {
-                //    die $results[1]; # TT behavior - why not just throw ?
-                //} else {
-                //    $ref = undef;
-                //    last;
-                //}
-                //# didn't find a method by that name - so fail down to hash and array access
+                HV* stash = SvSTASH((SV*) SvRV(ref));
+                GV* gv = gv_fetchmethod_autoload(stash, name_c, 1);
+                if (! gv) {
+                    char* package = sv_reftype(SvRV(ref), 1);
+                    croak("Can't locate object method \"%s\" via package %s", name_c, package);
+                } else {
+                    SV* coderef = newRV_noinc((SV*)GvCV(gv));
+                    ref = call_sv_with_args(_self, coderef, args, ref);
+                    if (! sv_defined(ref)) break;
+                    continue;
+                }
             }
 
             // hash member access
