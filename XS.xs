@@ -2,7 +2,6 @@
 #include "perl.h"
 #include "XSUB.h"
 #include "ppport.h"
-#include "string.h"
 
 MODULE = CGI::Ex::Template::XS		PACKAGE = CGI::Ex::Template::XS
 
@@ -66,7 +65,6 @@ play_expr (_self, _var, ...)
     I32 i    = 0;
     I32 n;
     SV** svp;
-    STRLEN nlen;
 
     // determine the top level of this particular variable access
 
@@ -103,7 +101,7 @@ play_expr (_self, _var, ...)
             SvGETMAGIC(*svp);
 
             // if it is the .. operator then just return the number of elements it created
-            if (strcmp(SvPV_nolen((SV*)(*svp)), "..")) {
+            if (sv_eq(*svp, newSVpv("..", 0))) {
                 PUSHMARK(SP);
                 XPUSHs(_self);
                 XPUSHs(tree);
@@ -160,7 +158,7 @@ play_expr (_self, _var, ...)
             ref = (SV*)(*svp);
         } else {
             //return if $name =~ $QR_PRIVATE; # don't allow vars that begin with _
-            svp = hv_fetch((HV*)SvRV(_self), "_vars", 5, 0);
+            svp = hv_fetch(self, "_vars", 5, 0);
             SvGETMAGIC(*svp);
             HV* vars = (HV*)SvRV(*svp);
             if (svp = hv_fetch(vars, name_c, name_len, 0)) {
@@ -178,6 +176,62 @@ play_expr (_self, _var, ...)
 
         // check at each point if the rurned thing was a code
         if (SvROK(ref) && SvTYPE(SvRV(ref)) == SVt_PVCV) {
+            AV* args_real = newAV();
+            I32 i;
+            I32 j;
+            if (SvROK(args)) {
+                AV* args_fake = (AV*)SvRV(args);
+                for (i = 0; i <= av_len(args_fake); i++) {
+                    svp = av_fetch(args_fake, i, FALSE);
+                    SvGETMAGIC(*svp);
+                    PUSHMARK(SP);
+                    XPUSHs(_self);
+                    XPUSHs(*svp);
+                    PUTBACK;
+                    n = call_method("play_expr", G_ARRAY);
+                    SPAGAIN;
+                    for (j = 0; j < n; j++) av_push(args_real, POPs);
+                    PUTBACK;
+                }
+            }
+            PUSHMARK(SP);
+            for (i = 0; i <= av_len(args_real); i++) {
+                svp = av_fetch(args_real, i, FALSE);
+                SvGETMAGIC(*svp);
+                XPUSHs(*svp);
+            }
+            PUTBACK;
+            n = call_sv(ref, G_ARRAY);
+            SPAGAIN;
+            if (n) {
+                SV* result = POPs;
+                if (sv_defined(result)) {
+                    if (n == 1) {
+                        ref = result;
+                    } else {
+                        AV* results = newAV();
+                        av_push(results, result);
+                        for (i = 1; i <= n; i++) av_push(results, (SV*)POPs);
+                        ref = newRV_noinc((SV*)results);
+                    }
+                    PUTBACK;
+                } else {
+                    result = POPs;
+                    PUTBACK;
+                    if (sv_defined(result)) {
+                        SV* errsv = get_sv("@", TRUE);
+                        sv_setsv(errsv, result);
+                        croak(Nullch);
+                    } else {
+                        ref = &PL_sv_undef;
+                        break;
+                    }
+                }
+            } else {
+                PUTBACK;
+                ref = &PL_sv_undef;
+                break;
+            }
             //my @results = $ref->($args ? map { $self->play_expr($_) } @$args : ());
             //if (defined $results[0]) {
             //    $ref = ($#results > 0) ? \@results : $results[0];
@@ -192,23 +246,34 @@ play_expr (_self, _var, ...)
         // descend one chained level
         if (i >= av_len(var)) break;
 
-        svp = hv_fetch(Args, "no_dots", nlen, 7);
-        SvGETMAGIC(*svp);
-        bool was_dot_call = SvTRUE(*svp);
+        svp = hv_fetch(Args, "no_dots", 7, 0);
+        bool was_dot_call = 0;
+        if (svp) {
+            SvGETMAGIC(*svp);
+            was_dot_call = SvTRUE(*svp);
+        }
 
         if (! was_dot_call) {
             svp = av_fetch(var, i++, 0);
             SvGETMAGIC(*svp);
-            was_dot_call = strcmp(SvPV_nolen(*svp), ".");
+            was_dot_call = sv_eq(*svp, newSVpv(".",0));
         }
 
         svp = av_fetch(var, i++, 0);
+        if (! svp) {
+            ref = &PL_sv_undef;
+            break;
+        }
         SvGETMAGIC(*svp);
         name = (SV*)(*svp);
         STRLEN name_len;
         char* name_c = SvPV(name, name_len);
 
         svp = av_fetch(var, i++, 0);
+        if (! svp) {
+            ref = &PL_sv_undef;
+            break;
+        }
         SvGETMAGIC(*svp);
         args = (SV*)(*svp);
 
@@ -318,9 +383,10 @@ play_expr (_self, _var, ...)
             }
 
             // hash member access
-            if (SvType(SvRV(ref)) == SVt_PVHV) {
-                if (was_dot_call && hv_exists((HV*)SvRV(ref), SvPV_nolen(name), nlen)) {
-                    svp = hv_fetch((HV*)SvRV(ref), SvPV_nolen(name), nlen, 0);
+            if (SvTYPE(SvRV(ref)) == SVt_PVHV) {
+                if (was_dot_call
+                    && hv_exists((HV*)SvRV(ref), name_c, name_len)
+                    && (svp = hv_fetch((HV*)SvRV(ref), name_c, name_len, 0))) {
                     SvGETMAGIC(*svp);
                     ref = (SV*)(*svp);
                 //} elsif ($HASH_OPS->{$name}) {
@@ -332,13 +398,17 @@ play_expr (_self, _var, ...)
                 }
 
             // array access
-            } else if (SvType(SvRV(ref)) == SVt_PVAV) {
-                char* name_c = SvPV_nolen(name);
-                UV* name_uv;
-                if (grok_number(name_c, strlen(name_c), name_uv)) { // $name =~ m{ ^ -? $QR_NUM $ }ox) {
-                    svp = av_fetch((AV*)SvRV(ref), (int)SvNV(name), 0);
-                    SvGETMAGIC(*svp);
-                    ref = (SV*)(*svp);
+            } else if (SvTYPE(SvRV(ref)) == SVt_PVAV) {
+                UV name_uv;
+                int res;
+                if ((res = grok_number(name_c, name_len, &name_uv))
+                    && res & IS_NUMBER_IN_UV) { // $name =~ m{ ^ -? $QR_NUM $ }ox) {
+                    if (svp = av_fetch((AV*)SvRV(ref), (int)SvNV(name), 0)) {
+                        SvGETMAGIC(*svp);
+                        ref = (SV*)(*svp);
+                    } else {
+                        ref = &PL_sv_undef;
+                    }
                 //} elsif ($LIST_OPS->{$name}) {
                 //    $ref = $LIST_OPS->{$name}->($ref, $args ? map { $self->play_expr($_) } @$args : ());
                 } else {
