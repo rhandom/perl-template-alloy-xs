@@ -813,8 +813,8 @@ set_variable (_self, _var, val, ...)
             ref = *svp;
 
             if (av_len(var) <= i) {
-                SvREFCNT_inc(val);
-                if (! hv_store((HV*)SvRV(ref), name_c, name_len, val, 0)) SvREFCNT_dec(val);
+                SV* newval = newSVsv(val);
+                hv_store((HV*)SvRV(ref), name_c, name_len, newval, 0);
                 XPUSHs(val);
                 XSRETURN(1);
             }
@@ -844,9 +844,9 @@ set_variable (_self, _var, val, ...)
         ref = *svp;
 
         if (av_len(var) <= i) {
-            SvREFCNT_inc(val);
-            if (! hv_store((HV*)SvRV(ref), name_c, name_len, val, 0)) SvREFCNT_dec(val);
-            XPUSHs(val);
+            SV* newval = newSVsv(val);
+            hv_store((HV*)SvRV(ref), name_c, name_len, newval, 0);
+            XPUSHs(newval);
             XSRETURN(1);
         }
 
@@ -972,8 +972,8 @@ set_variable (_self, _var, val, ...)
         // hash member access
         if (SvTYPE(SvRV(ref)) == SVt_PVHV) {
             if (av_len(var) <= i) {
-                SvREFCNT_inc(val);
-                if (! hv_store((HV*)SvRV(ref), name_c, name_len, val, 0)) SvREFCNT_dec(val);
+                SV* newval = newSVsv(val);
+                hv_store((HV*)SvRV(ref), name_c, name_len, newval, 0);
                 XPUSHs(val);
                 XSRETURN(1);
             }
@@ -996,8 +996,8 @@ set_variable (_self, _var, val, ...)
                 && res & IS_NUMBER_IN_UV) { // $name =~ m{ ^ -? $QR_NUM $ }ox) {
 
                 if (av_len(var) <= i) {
-                    SvREFCNT_inc(val);
-                    if (! av_store((AV*)SvRV(ref), (int)SvNV(name), val)) SvREFCNT_dec(val);
+                    SV* newval = newSVsv(val);
+                    av_store((AV*)SvRV(ref), (int)SvNV(name), newval);
                     XPUSHs(val);
                     XSRETURN(1);
                 }
