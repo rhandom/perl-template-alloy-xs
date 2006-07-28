@@ -362,7 +362,7 @@ play_expr (_self, _var, ...)
                     break;
                 }
             } else {
-                //die "Shouldn't get a ". ref($name) ." during a vivify on chain";
+                (void)die("Shouldn't get a . ref($name) . during a vivify on chain");
             }
         }
         if (name_is_private(name_c)) { // don't allow vars that begin with _
@@ -751,4 +751,276 @@ execute_tree (_self, _tree, _out_ref)
     } else {
         XPUSHi(0);
     }
+    XSRETURN(1);
+
+
+static SV*
+set_variable (_self, _var, val, ...)
+    SV* _self;
+    SV* _var;
+    SV* val;
+  PPCODE:
+    if (! _var) XSRETURN_UNDEF;
+
+    HV* self = (HV*)SvRV(_self);
+    AV* var;
+    if (SvROK(_var)) {
+        var = (AV*)SvRV(_var);
+    } else { // allow for the parse tree to store literals - the literal is used as a name (like [% 'a' = 'A' %])
+        var = newAV();
+        av_push(var, _var);
+        av_push(var, newSViv(0));
+    }
+    HV* Args = (items > 2 && SvROK(ST(2)) && SvTYPE(SvRV(ST(2))) == SVt_PVHV) ? (HV*)SvRV(ST(2)) : Nullhv;
+    I32 i    = 0;
+    I32 n;
+    SV** svp;
+
+    // determine the top level of this particular variable access
+
+    SV* ref;
+    svp = av_fetch(var, i++, FALSE);
+    SvGETMAGIC(*svp);
+    SV* name = (SV*)(*svp);
+    STRLEN name_len;
+    char* name_c = SvPV(name, name_len);
+
+    svp = av_fetch(var, i++, FALSE);
+    SvGETMAGIC(*svp);
+    SV* args = (SV*)(*svp);
+
+    if (SvROK(name)) {
+        if (SvTYPE(SvRV(name)) == SVt_PVAV) { // named access (ie via $name.foo)
+            PUSHMARK(SP);
+            XPUSHs(_self);
+            XPUSHs(name); // we could check if name is an array - but we will let the recursive call hit
+            PUTBACK;
+            n = call_method("play_expr", G_SCALAR);
+            SPAGAIN;
+            name = POPs;
+            name_c = SvPV(name, name_len);
+            PUTBACK;
+
+            if (! sv_defined(name)         // no defined
+                || name_is_private(name_c) // don't allow vars that begin with _
+                || ! (svp = hv_fetch(self, "_vars", 5, FALSE)) // no entry
+                ) {
+                XPUSHs(&PL_sv_undef);
+                XSRETURN(1);
+            }
+
+            SvGETMAGIC(*svp);
+            ref = *svp;
+
+            if (av_len(var) <= i) {
+                SvREFCNT_inc(val);
+                if (! hv_store((HV*)SvRV(ref), name_c, name_len, val, 0)) SvREFCNT_dec(val);
+                XPUSHs(val);
+                XSRETURN(1);
+            }
+
+            svp = hv_fetch((HV*)SvRV(ref), name_c, name_len, FALSE);
+            if (! svp || ! SvROK(*svp)) {
+                HV* newlevel = newHV();
+                hv_store((HV*)SvRV(ref), name_c, name_len, newRV_noinc((SV*)newlevel), 0);
+                svp = hv_fetch((HV*)SvRV(ref), name_c, name_len, FALSE);
+            }
+            SvGETMAGIC(*svp);
+            ref = *svp;
+
+        } else { // all other types can't be set
+            XPUSHs(&PL_sv_undef);
+            XSRETURN(1);
+        }
+    } else if (sv_defined(name)) {
+        if (name_is_private(name_c) // don't allow vars that begin with _
+            || ! (svp = hv_fetch(self, "_vars", 5, FALSE)) // no entry
+            ) {
+            XPUSHs(&PL_sv_undef);
+            XSRETURN(1);
+        }
+
+        SvGETMAGIC(*svp);
+        ref = *svp;
+
+        if (av_len(var) <= i) {
+            SvREFCNT_inc(val);
+            if (! hv_store((HV*)SvRV(ref), name_c, name_len, val, 0)) SvREFCNT_dec(val);
+            XPUSHs(val);
+            XSRETURN(1);
+        }
+
+        svp = hv_fetch((HV*)SvRV(ref), name_c, name_len, FALSE);
+        if (! svp || ! SvROK(*svp)) {
+            HV* newlevel = newHV();
+            hv_store((HV*)SvRV(ref), name_c, name_len, newRV_noinc((SV*)newlevel), 0);
+            svp = hv_fetch((HV*)SvRV(ref), name_c, name_len, FALSE);
+        }
+        SvGETMAGIC(*svp);
+        ref = *svp;
+
+    }
+
+    while (sv_defined(ref)) {
+
+        // check at each point if the returned thing was a code
+        if (SvROK(ref) && SvTYPE(SvRV(ref)) == SVt_PVCV) {
+            ref = call_sv_with_args(ref, _self, args, G_ARRAY, Nullsv);
+            if (! sv_defined(ref)) {
+                XPUSHs(&PL_sv_undef);
+                XSRETURN(1);
+            }
+        }
+
+        // descend one chained level
+        if (i >= av_len(var)) break;
+
+        svp = hv_fetch(Args, "no_dots", 7, FALSE);
+        bool was_dot_call = 0;
+        if (svp) {
+            SvGETMAGIC(*svp);
+            was_dot_call = SvTRUE(*svp);
+        }
+
+        if (! was_dot_call) {
+            svp = av_fetch(var, i++, FALSE);
+            SvGETMAGIC(*svp);
+            was_dot_call = sv_eq(*svp, newSVpv(".", 0));
+        }
+
+        svp = av_fetch(var, i++, FALSE);
+        if (! svp) {
+            ref = &PL_sv_undef;
+            break;
+        }
+        SvGETMAGIC(*svp);
+        name = (SV*)(*svp);
+        STRLEN name_len;
+        char* name_c = SvPV(name, name_len);
+
+        svp = av_fetch(var, i++, FALSE);
+        if (! svp) {
+            ref = &PL_sv_undef;
+            break;
+        }
+        SvGETMAGIC(*svp);
+        args = (SV*)(*svp);
+
+        // allow for named portions of a variable name (foo.$name.bar)
+        if (SvROK(name)) {
+            if (SvTYPE(SvRV(name)) == SVt_PVAV) {
+                PUSHMARK(SP);
+                XPUSHs(_self);
+                XPUSHs(name); // we could check if name is an array - but we will let the recursive call hit
+                PUTBACK;
+                n = call_method("play_expr", G_SCALAR);
+                SPAGAIN;
+                name = POPs;
+                name_c = SvPV(name, name_len);
+                PUTBACK;
+                if (! sv_defined(name)) {
+                    XPUSHs(&PL_sv_undef);
+                    XSRETURN(1);
+                }
+            } else {
+                (void)die("Shouldn't get a .ref($name). during a vivify on chain");
+            }
+        }
+        if (name_is_private(name_c)) { // don't allow vars that begin with _
+            XPUSHs(&PL_sv_undef);
+            XSRETURN(1);
+        }
+
+        // scalar access
+        if (! SvROK(ref)) {
+            XPUSHs(&PL_sv_undef);
+            XSRETURN(1);
+
+        // method calls on objects
+        } else if (was_dot_call && sv_isobject(ref)) {
+            HV*  stash = SvSTASH((SV*) SvRV(ref));
+            GV*  gv    = gv_fetchmethod_autoload(stash, name_c, 1);
+            if (! gv) {
+                char* package = sv_reftype(SvRV(ref), 1);
+                croak("Can't locate object method \"%s\" via package \"%s\"", name_c, package);
+            } else {
+                bool lvalueish = FALSE;
+                if (i >= av_len(var)) {
+                    lvalueish = TRUE;
+                    AV* newargs = newAV();
+                    if (SvROK(args) && SvTYPE(SvRV(args)) == SVt_PVAV) {
+                        I32 j;
+                        for (j = 0; j <= av_len((AV*)SvRV(args)); j++) {
+                            svp = av_fetch((AV*)SvRV(args), j, FALSE);
+                            if (svp) SvGETMAGIC(*svp);
+                            av_push(newargs, svp ? *svp : &PL_sv_undef);
+                        }
+                    }
+                    av_push(newargs, val);
+                    args = newRV_noinc((SV*)newargs);
+                }
+                SV* coderef = newRV_noinc((SV*)GvCV(gv));
+                ref = call_sv_with_args(coderef, _self, args, G_ARRAY, ref);
+                if (lvalueish || ! sv_defined(ref)) {
+                    XPUSHs(&PL_sv_undef);
+                    XSRETURN(1);
+                }
+                continue;
+            }
+        }
+
+        // hash member access
+        if (SvTYPE(SvRV(ref)) == SVt_PVHV) {
+            if (av_len(var) <= i) {
+                SvREFCNT_inc(val);
+                if (! hv_store((HV*)SvRV(ref), name_c, name_len, val, 0)) SvREFCNT_dec(val);
+                XPUSHs(val);
+                XSRETURN(1);
+            }
+
+            svp = hv_fetch((HV*)SvRV(ref), name_c, name_len, FALSE);
+            if (! svp || ! SvROK(*svp)) {
+                HV* newlevel = newHV();
+                hv_store((HV*)SvRV(ref), name_c, name_len, newRV_noinc((SV*)newlevel), 0);
+                svp = hv_fetch((HV*)SvRV(ref), name_c, name_len, FALSE);
+            }
+            SvGETMAGIC(*svp);
+            ref = *svp;
+            continue;
+
+        // array access
+        } else if (SvTYPE(SvRV(ref)) == SVt_PVAV) {
+            UV name_uv;
+            int res;
+            if ((res = grok_number(name_c, name_len, &name_uv))
+                && res & IS_NUMBER_IN_UV) { // $name =~ m{ ^ -? $QR_NUM $ }ox) {
+
+                if (av_len(var) <= i) {
+                    SvREFCNT_inc(val);
+                    if (! av_store((AV*)SvRV(ref), (int)SvNV(name), val)) SvREFCNT_dec(val);
+                    XPUSHs(val);
+                    XSRETURN(1);
+                }
+
+                svp = av_fetch((AV*)SvRV(ref), (int)SvNV(name), FALSE);
+                if (! svp || ! SvROK(*svp)) {
+                    HV* newlevel = newHV();
+                    av_store((AV*)SvRV(ref), (int)SvNV(name), newRV_noinc((SV*)newlevel));
+                    svp = av_fetch((AV*)SvRV(ref), (int)SvNV(name), FALSE);
+                }
+                SvGETMAGIC(*svp);
+                ref = *svp;
+                continue;
+
+            } else {
+                XPUSHs(&PL_sv_undef);
+                XSRETURN(1);
+            }
+        } else {
+            XPUSHs(&PL_sv_undef);
+            XSRETURN(1);
+        }
+    }
+
+    XPUSHs(&PL_sv_undef);
     XSRETURN(1);
