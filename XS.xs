@@ -172,11 +172,14 @@ play_expr (_self, _var, ...)
             ref = (SV*)SvRV(name);
             break;
 
+        case SVt_PVMG: // also a ref to some strings
+            ref = (SV*)SvRV(name);
+            break;
+
         case SVt_RV: // ref to a ref
             tree = (SV*)SvRV(name);
             svp  = av_fetch((AV*)SvRV(tree), 0, 0);
             SvGETMAGIC(*svp);
-
             // if it is the .. operator then just return the number of elements it created
             if (sv_eq(*svp, newSVpv("..", 0))) {
                 PUSHMARK(SP);
