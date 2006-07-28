@@ -308,6 +308,18 @@ play_expr (_self, _var, ...)
 
         // allow for scalar and filter access (this happens for every non virtual method call)
         if (! SvROK(ref)) {
+            SV* table = get_sv("CGI::Ex::Template::SCALAR_OPS", TRUE);
+            if (SvROK(table)
+                && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
+                SvGETMAGIC(*svp);
+                PUSHMARK(SP);
+                XPUSHs(ref);
+                PUTBACK;
+                n = call_sv(*svp, G_SCALAR);
+                SPAGAIN;
+                ref = n ? POPs : &PL_sv_undef;
+                PUTBACK;
+
             //if ($SCALAR_OPS->{$name}) {                        # normal scalar op
             //    $ref = $SCALAR_OPS->{$name}->($ref, $args ? map { $self->play_expr($_) } @$args : ());
             //
@@ -357,9 +369,9 @@ play_expr (_self, _var, ...)
             //        && $seen_filters{$var->[$i - 5] || ''}) {
             //        $self->throw('filter', "invalid FILTER entry for '".$var->[$i - 5]."' (not a CODE ref)");
             //    }
-            //} else {
+            } else {
                 ref = &PL_sv_undef;
-                //}
+            }
 
         } else {
 
