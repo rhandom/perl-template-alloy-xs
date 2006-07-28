@@ -1,6 +1,4 @@
 Changes
-const-c.inc
-const-xs.inc
 fallback/const-c.inc
 fallback/const-xs.inc
 lib/CGI/Ex/Template/XS.pm
