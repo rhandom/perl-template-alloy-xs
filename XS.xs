@@ -198,7 +198,7 @@ play_expr (_self, _var, ...)
 
         case SVt_RV: // ref to a ref
             tree = (SV*)SvRV(name);
-            svp  = av_fetch((AV*)SvRV(tree), 0, 0);
+            svp  = av_fetch((AV*)SvRV(tree), 0, FALSE);
             SvGETMAGIC(*svp);
             // if it is the .. operator then just return the number of elements it created
             if (sv_eq(*svp, newSVpv("..", 0))) {
@@ -238,42 +238,64 @@ play_expr (_self, _var, ...)
                     XPUSHs(&PL_sv_undef);
                     XSRETURN(1);
                 }
-                svp = hv_fetch(self, "_vars", 5, TRUE);
+                svp = hv_fetch(self, "_vars", 5, FALSE);
                 SvGETMAGIC(*svp);
                 HV* vars = (HV*)SvRV(*svp);
-                if (svp = hv_fetch(vars, name_c, name_len, 0)) {
+                if (svp = hv_fetch(vars, name_c, name_len, FALSE)) {
+                    SvGETMAGIC(*svp);
+                    ref = *svp;
+                } else {
+                    SV* table = get_sv("CGI::Ex::Template::VOBJS", FALSE);
+                    if (SvROK(table)
+                        && SvTYPE(SvRV(table)) == SVt_PVHV
+                        && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))
+                        && SvTRUE(*svp)) {
+                        SvGETMAGIC(*svp);
+                        ref = *svp;
+                    } else {
+                        ref = &PL_sv_undef;
+                    }
+                }
+            }
+        }
+    } else if (sv_defined(name)) {
+        svp = hv_fetch(Args, "is_namespace_during_compile", 27, FALSE);
+        if (svp && SvTRUE(*svp)) {
+
+            if (svp = hv_fetch(self, "NAMESPACE", 9, FALSE)) {
+                SvGETMAGIC(*svp);
+                HV* vars = (HV*)SvRV(*svp);
+                if (svp = hv_fetch(vars, name_c, name_len, FALSE)) {
                     SvGETMAGIC(*svp);
                     ref = (SV*)(*svp);
                 } else {
                     ref = &PL_sv_undef;
                 }
+            } else {
+                ref = &PL_sv_undef;
             }
-        }
-    } else if (sv_defined(name)) {
-        svp = hv_fetch(Args, "is_namespace_during_compile", 27, 0);
-        if (svp && SvTRUE(*svp)) {
-
-            svp = hv_fetch(self, "NAMESPACE", 9, TRUE);
-            SvGETMAGIC(*svp);
-            HV* vars = (HV*)SvRV(*svp);
-            svp = hv_fetch(vars, name_c, name_len, FALSE);
-            SvGETMAGIC(*svp);
-
-            ref = (SV*)(*svp);
         } else {
             if (name_is_private(name_c)) { // don't allow vars that begin with _
                 XPUSHs(&PL_sv_undef);
                 XSRETURN(1);
             }
-            svp = hv_fetch(self, "_vars", 5, 0);
+            svp = hv_fetch(self, "_vars", 5, FALSE);
             SvGETMAGIC(*svp);
             HV* vars = (HV*)SvRV(*svp);
             if (svp = hv_fetch(vars, name_c, name_len, FALSE)) {
                 SvGETMAGIC(*svp);
-                ref = (SV*)(*svp);
-                //$ref = $VOBJS->{$name} if ! defined $ref;
+                ref = *svp;
             } else {
-                ref = &PL_sv_undef;
+                SV* table = get_sv("CGI::Ex::Template::VOBJS", FALSE);
+                if (SvROK(table)
+                    && SvTYPE(SvRV(table)) == SVt_PVHV
+                    && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))
+                    && SvTRUE(*svp)) {
+                    SvGETMAGIC(*svp);
+                    ref = *svp;
+                } else {
+                    ref = &PL_sv_undef;
+                }
             }
         }
     }
