@@ -330,15 +330,20 @@ play_expr (_self, _var, ...)
 
         // allow for scalar and filter access (this happens for every non virtual method call)
         if (! SvROK(ref)) {
-            SV* table = get_sv("CGI::Ex::Template::SCALAR_OPS", TRUE);
-            if (SvROK(table)
+            SV* table;
+            if ((table = get_sv("CGI::Ex::Template::SCALAR_OPS", TRUE))
+                && SvROK(table)
                 && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
                 SvGETMAGIC(*svp);
                 ref = call_sv_with_args(*svp, _self, args, G_SCALAR, ref);
 
-            //} elsif ($LIST_OPS->{$name}) {                     # auto-promote to list and use list op
-            //    $ref = $LIST_OPS->{$name}->([$ref], $args ? map { $self->play_expr($_) } @$args : ());
-            //
+            } else if ((table = get_sv("CGI::Ex::Template::LIST_OPS", TRUE)) // auto-promote to list and use list op
+                && SvROK(table)
+                && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
+                SvGETMAGIC(*svp);
+                AV* array = newAV();
+                av_push(array, ref);
+                ref = call_sv_with_args(*svp, _self, args, G_SCALAR, newRV_noinc((SV*)array));
             //} elsif (my $filter = $self->{'FILTERS'}->{$name}    # filter configured in Template args
             //         || $FILTER_OPS->{$name}                     # predefined filters in CET
             //         || (UNIVERSAL::isa($name, 'CODE') && $name) # looks like a filter sub passed in the stash
