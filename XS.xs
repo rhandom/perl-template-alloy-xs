@@ -312,14 +312,12 @@ play_expr (_self, _var, ...)
         // descend one chained level
         if (i >= av_len(var)) break;
 
-        svp = hv_fetch(Args, "no_dots", 7, FALSE);
         bool was_dot_call = 0;
-        if (svp) {
-            SvGETMAGIC(*svp);
-            was_dot_call = SvTRUE(*svp);
-        }
-
-        if (! was_dot_call) {
+        svp = hv_fetch(Args, "no_dots", 7, FALSE);
+        if (svp) SvGETMAGIC(*svp);
+        if (svp && SvTRUE(*svp)) {
+            was_dot_call = 1;
+        } else {
             svp = av_fetch(var, i++, FALSE);
             SvGETMAGIC(*svp);
             was_dot_call = sv_eq(*svp, newSVpv(".", 0));
@@ -771,7 +769,7 @@ set_variable (_self, _var, val, ...)
         av_push(var, _var);
         av_push(var, newSViv(0));
     }
-    HV* Args = (items > 2 && SvROK(ST(2)) && SvTYPE(SvRV(ST(2))) == SVt_PVHV) ? (HV*)SvRV(ST(2)) : Nullhv;
+    HV* Args = (items > 3 && SvROK(ST(3)) && SvTYPE(SvRV(ST(3))) == SVt_PVHV) ? (HV*)SvRV(ST(3)) : Nullhv;
     I32 i    = 0;
     I32 n;
     SV** svp;
@@ -875,14 +873,12 @@ set_variable (_self, _var, val, ...)
         // descend one chained level
         if (i >= av_len(var)) break;
 
-        svp = hv_fetch(Args, "no_dots", 7, FALSE);
         bool was_dot_call = 0;
-        if (svp) {
-            SvGETMAGIC(*svp);
-            was_dot_call = SvTRUE(*svp);
-        }
-
-        if (! was_dot_call) {
+        svp = hv_fetch(Args, "no_dots", 7, FALSE);
+        if (svp) SvGETMAGIC(*svp);
+        if (svp && SvTRUE(*svp)) {
+            was_dot_call = 1;
+        } else {
             svp = av_fetch(var, i++, FALSE);
             SvGETMAGIC(*svp);
             was_dot_call = sv_eq(*svp, newSVpv(".", 0));
