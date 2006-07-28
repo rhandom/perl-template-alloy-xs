@@ -654,3 +654,101 @@ play_expr (_self, _var, ...)
 
     XPUSHs(ref);
     XSRETURN(1);
+
+
+static int
+execute_tree (_self, _tree, _out_ref)
+    SV* _self;
+    SV* _tree;
+    SV* _out_ref;
+  PPCODE:
+    if (SvROK(_self) && SvROK(_tree) && SvROK(_out_ref)) {
+        HV* self    = (HV*)SvRV(_self);
+        AV* tree    = (AV*)SvRV(_tree);
+        SV* out_ref = (SV*)SvRV(_out_ref);
+        SV* _table  = get_sv("CGI::Ex::Template::DIRECTIVES", FALSE);
+        if (! SvROK(_table) || SvTYPE(SvRV(_table)) != SVt_PVHV) (void)die("Missing table");
+        HV* table   = (HV*)SvRV(_table);
+        I32 len     = av_len(tree) + 1;
+
+        SV** svp;
+        I32 i;
+        I32 n;
+        SV*    _node;
+        AV*    node;
+        SV*    directive;
+        STRLEN directive_len;
+        char*  directive_c;
+        SV*    details;
+        AV*    directive_node;
+        SV*    add_str;
+
+        for (i = 0; i < len; i++) {
+            svp = av_fetch(tree, i, FALSE);
+            if (! svp) continue;
+            SvGETMAGIC(*svp);
+            _node = *svp;
+
+            if (! SvROK(_node)) {
+                if (sv_defined(_node)) sv_catsv(out_ref, _node);
+                continue;
+            }
+
+            if ((svp = hv_fetch(self, "_debug_dirs", 11, FALSE))
+                && SvTRUE(*svp)) {
+                svp = hv_fetch(self, "_debug_off", 10, FALSE);
+                if (! svp || (svp && ! SvTRUE(*svp))) {
+                    PUSHMARK(SP);
+                    XPUSHs(_self);
+                    XPUSHs(_node);
+                    PUTBACK;
+                    n = call_method("debug_node", G_SCALAR);
+                    SPAGAIN;
+                    if (n >= 1) {
+                        add_str = POPs;
+                        if (sv_defined(add_str)) sv_catsv(out_ref, add_str);
+                    }
+                    PUTBACK;
+                }
+            }
+
+            node = (AV*)SvRV(_node);
+
+            svp = av_fetch(node, 0, FALSE);
+            if (! svp) continue;
+            SvGETMAGIC(*svp);
+            directive = *svp;
+            directive_c = SvPV(directive, directive_len);
+
+            svp = av_fetch(node, 3, FALSE);
+            if (! svp) continue;
+            SvGETMAGIC(*svp);
+            details = *svp;
+
+            svp = hv_fetch(table, directive_c, directive_len, FALSE);
+            if (! svp) continue;
+            directive_node = (AV*)SvRV(*svp);
+
+            svp = av_fetch(directive_node, 1, FALSE);
+            if (! svp) continue;
+
+            PUSHMARK(SP);
+            XPUSHs(_self);
+            XPUSHs(details);
+            XPUSHs(_node);
+            XPUSHs(_out_ref);
+            PUTBACK;
+            n = call_sv(*svp, G_SCALAR);
+            SPAGAIN;
+            if (n >= 1) {
+                add_str = POPs;
+                if (sv_defined(add_str)) sv_catsv(out_ref, add_str);
+            }
+            PUTBACK;
+        }
+
+        XPUSHi(1);
+    } else {
+        XPUSHi(0);
+    }
+    XSRETURN(1);
