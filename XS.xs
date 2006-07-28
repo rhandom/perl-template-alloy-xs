@@ -130,7 +130,7 @@ test_xs (self)
           SV* foo = &PL_sv_undef;
           HV* bar = newHV();
           SV** res = hv_store(bar, "foo", 3, newSVpv("123",0), 0);
-          SV** svp = hv_fetch(bar, "foo", 3, 0);
+          SV** svp = hv_fetch(bar, "foo", 3, FALSE);
           RETVAL = SvNV(*svp);
           //          RETVAL = sv_defined(r) ? 7 : 8;
         }
@@ -166,13 +166,13 @@ play_expr (_self, _var, ...)
     // determine the top level of this particular variable access
 
     SV* ref;
-    svp = av_fetch(var, i++, 0);
+    svp = av_fetch(var, i++, FALSE);
     SvGETMAGIC(*svp);
     SV* name = (SV*)(*svp);
     STRLEN name_len;
     char* name_c = SvPV(name, name_len);
 
-    svp = av_fetch(var, i++, 0);
+    svp = av_fetch(var, i++, FALSE);
     SvGETMAGIC(*svp);
     SV* args = (SV*)(*svp);
 
@@ -312,7 +312,7 @@ play_expr (_self, _var, ...)
         // descend one chained level
         if (i >= av_len(var)) break;
 
-        svp = hv_fetch(Args, "no_dots", 7, 0);
+        svp = hv_fetch(Args, "no_dots", 7, FALSE);
         bool was_dot_call = 0;
         if (svp) {
             SvGETMAGIC(*svp);
@@ -320,12 +320,12 @@ play_expr (_self, _var, ...)
         }
 
         if (! was_dot_call) {
-            svp = av_fetch(var, i++, 0);
+            svp = av_fetch(var, i++, FALSE);
             SvGETMAGIC(*svp);
-            was_dot_call = sv_eq(*svp, newSVpv(".",0));
+            was_dot_call = sv_eq(*svp, newSVpv(".", 0));
         }
 
-        svp = av_fetch(var, i++, 0);
+        svp = av_fetch(var, i++, FALSE);
         if (! svp) {
             ref = &PL_sv_undef;
             break;
@@ -335,7 +335,7 @@ play_expr (_self, _var, ...)
         STRLEN name_len;
         char* name_c = SvPV(name, name_len);
 
-        svp = av_fetch(var, i++, 0);
+        svp = av_fetch(var, i++, FALSE);
         if (! svp) {
             ref = &PL_sv_undef;
             break;
@@ -541,7 +541,7 @@ play_expr (_self, _var, ...)
                             var = newvar;
                             i   = 2;
                         }
-                        svp = av_fetch(var, i - 5, 0);
+                        svp = av_fetch(var, i - 5, FALSE);
                         if (svp && SvTRUE(*svp)) { // looks like its cyclic - without a coderef in sight
                             SV*    _name = *svp;
                             STRLEN _name_len;
@@ -581,7 +581,7 @@ play_expr (_self, _var, ...)
             if (SvTYPE(SvRV(ref)) == SVt_PVHV) {
                 if (was_dot_call
                     && hv_exists((HV*)SvRV(ref), name_c, name_len)
-                    && (svp = hv_fetch((HV*)SvRV(ref), name_c, name_len, 0))) {
+                    && (svp = hv_fetch((HV*)SvRV(ref), name_c, name_len, FALSE))) {
                     SvGETMAGIC(*svp);
                     ref = (SV*)(*svp);
                 } else {
@@ -605,7 +605,7 @@ play_expr (_self, _var, ...)
                 int res;
                 if ((res = grok_number(name_c, name_len, &name_uv))
                     && res & IS_NUMBER_IN_UV) { // $name =~ m{ ^ -? $QR_NUM $ }ox) {
-                    if (svp = av_fetch((AV*)SvRV(ref), (int)SvNV(name), 0)) {
+                    if (svp = av_fetch((AV*)SvRV(ref), (int)SvNV(name), FALSE)) {
                         SvGETMAGIC(*svp);
                         ref = (SV*)(*svp);
                     } else {
