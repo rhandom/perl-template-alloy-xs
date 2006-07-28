@@ -5,9 +5,12 @@
 
 #define sv_defined(sv) (sv && (SvIOK(sv) || SvNOK(sv) || SvPOK(sv) || SvROK(sv)))
 
-static SV* call_sv_with_args (SV*, SV*, SV*, SV*);
+static SV* call_sv_with_args (SV*, SV*, SV*, I32, SV*);
+static bool is_private (const char*);
 
-static SV* call_sv_with_args (SV* self, SV* code, SV* args, SV* optional_obj) {
+///----------------------------------------------------------------///
+
+static SV* call_sv_with_args (SV* self, SV* code, SV* args, I32 flags, SV* optional_obj) {
     dSP;
     I32 n;
     I32 i;
@@ -37,7 +40,7 @@ static SV* call_sv_with_args (SV* self, SV* code, SV* args, SV* optional_obj) {
         XPUSHs(*svp);
     }
     PUTBACK;
-    n = call_sv(code, G_ARRAY);
+    n = call_sv(code, flags);
     SPAGAIN;
 
     SV* ref;
@@ -72,6 +75,12 @@ static SV* call_sv_with_args (SV* self, SV* code, SV* args, SV* optional_obj) {
 
     return ref;
 }
+
+bool name_is_private (const char* name) {
+    return (*name == '_' || *name == '.') ? 1 : 0;
+}
+
+///----------------------------------------------------------------///
 
 MODULE = CGI::Ex::Template::XS		PACKAGE = CGI::Ex::Template::XS
 
@@ -198,11 +207,15 @@ play_expr (_self, _var, ...)
             n = call_method("play_expr", G_SCALAR);
             SPAGAIN;
             name = POPs;
+            name_c = SvPV(name, name_len);
             PUTBACK;
 
             if (sv_defined(name)) {
-                //return if $name =~ $QR_PRIVATE; # don't allow vars that begin with _
-                svp = hv_fetch(self, "_vars", 5, 0);
+                if (name_is_private(name_c)) { // don't allow vars that begin with _
+                    XPUSHs(&PL_sv_undef);
+                    XSRETURN(1);
+                }
+                svp = hv_fetch(self, "_vars", 5, TRUE);
                 SvGETMAGIC(*svp);
                 HV* vars = (HV*)SvRV(*svp);
                 if (svp = hv_fetch(vars, name_c, name_len, 0)) {
@@ -217,19 +230,22 @@ play_expr (_self, _var, ...)
         svp = hv_fetch(Args, "is_namespace_during_compile", 27, 0);
         if (svp && SvTRUE(*svp)) {
 
-            svp = hv_fetch(self, "NAMESPACE", 9, 0);
+            svp = hv_fetch(self, "NAMESPACE", 9, TRUE);
             SvGETMAGIC(*svp);
             HV* vars = (HV*)SvRV(*svp);
-            svp = hv_fetch(vars, name_c, name_len, 0);
+            svp = hv_fetch(vars, name_c, name_len, FALSE);
             SvGETMAGIC(*svp);
 
             ref = (SV*)(*svp);
         } else {
-            //return if $name =~ $QR_PRIVATE; # don't allow vars that begin with _
+            if (name_is_private(name_c)) { // don't allow vars that begin with _
+                XPUSHs(&PL_sv_undef);
+                XSRETURN(1);
+            }
             svp = hv_fetch(self, "_vars", 5, 0);
             SvGETMAGIC(*svp);
             HV* vars = (HV*)SvRV(*svp);
-            if (svp = hv_fetch(vars, name_c, name_len, 0)) {
+            if (svp = hv_fetch(vars, name_c, name_len, FALSE)) {
                 SvGETMAGIC(*svp);
                 ref = (SV*)(*svp);
                 //$ref = $VOBJS->{$name} if ! defined $ref;
@@ -244,7 +260,7 @@ play_expr (_self, _var, ...)
 
         // check at each point if the rurned thing was a code
         if (SvROK(ref) && SvTYPE(SvRV(ref)) == SVt_PVCV) {
-            ref = call_sv_with_args(_self, ref, args, Nullsv);
+            ref = call_sv_with_args(_self, ref, args, G_ARRAY, Nullsv);
             if (! sv_defined(ref)) break;
         }
 
@@ -294,11 +310,9 @@ play_expr (_self, _var, ...)
                 n = call_method("play_expr", G_SCALAR);
                 SPAGAIN;
                 name = POPs;
+                name_c = SvPV(name, name_len);
                 PUTBACK;
-                if (! sv_defined(name)
-                    //|| $name =~ $QR_PRIVATE
-                    //|| $name =~ /^\./
-                    ) {
+                if (! sv_defined(name)) {
                     ref = &PL_sv_undef;
                     break;
                 }
@@ -306,10 +320,10 @@ play_expr (_self, _var, ...)
                 //die "Shouldn't get a ". ref($name) ." during a vivify on chain";
             }
         }
-        //if ($name =~ $QR_PRIVATE) { # don't allow vars that begin with _
-        //    $ref = undef;
-        //    last;
-        //}
+        if (name_is_private(name_c)) { // don't allow vars that begin with _
+            ref = &PL_sv_undef;
+            break;
+        }
 
         // allow for scalar and filter access (this happens for every non virtual method call)
         if (! SvROK(ref)) {
@@ -317,17 +331,8 @@ play_expr (_self, _var, ...)
             if (SvROK(table)
                 && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
                 SvGETMAGIC(*svp);
-                PUSHMARK(SP);
-                XPUSHs(ref);
-                PUTBACK;
-                n = call_sv(*svp, G_SCALAR);
-                SPAGAIN;
-                ref = n ? POPs : &PL_sv_undef;
-                PUTBACK;
+                ref = call_sv_with_args(_self, *svp, args, G_SCALAR, ref);
 
-            //if ($SCALAR_OPS->{$name}) {                        # normal scalar op
-            //    $ref = $SCALAR_OPS->{$name}->($ref, $args ? map { $self->play_expr($_) } @$args : ());
-            //
             //} elsif ($LIST_OPS->{$name}) {                     # auto-promote to list and use list op
             //    $ref = $LIST_OPS->{$name}->([$ref], $args ? map { $self->play_expr($_) } @$args : ());
             //
@@ -389,7 +394,7 @@ play_expr (_self, _var, ...)
                     croak("Can't locate object method \"%s\" via package %s", name_c, package);
                 } else {
                     SV* coderef = newRV_noinc((SV*)GvCV(gv));
-                    ref = call_sv_with_args(_self, coderef, args, ref);
+                    ref = call_sv_with_args(_self, coderef, args, G_ARRAY, ref);
                     if (! sv_defined(ref)) break;
                     continue;
                 }
@@ -402,12 +407,17 @@ play_expr (_self, _var, ...)
                     && (svp = hv_fetch((HV*)SvRV(ref), name_c, name_len, 0))) {
                     SvGETMAGIC(*svp);
                     ref = (SV*)(*svp);
-                //} elsif ($HASH_OPS->{$name}) {
-                //    $ref = $HASH_OPS->{$name}->($ref, $args ? map { $self->play_expr($_) } @$args : ());
-                //} elsif ($Args->{'is_namespace_during_compile'}) {
-                //    return $var; # abort - can't fold namespace variable
                 } else {
-                    ref = &PL_sv_undef;
+                    SV* table = get_sv("CGI::Ex::Template::HASH_OPS", TRUE);
+                    if (SvROK(table)
+                        && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
+                        SvGETMAGIC(*svp);
+                        ref = call_sv_with_args(_self, *svp, args, G_SCALAR, ref);
+                    //} elsif ($Args->{'is_namespace_during_compile'}) {
+                    //    return $var; # abort - can't fold namespace variable
+                    } else {
+                        ref = &PL_sv_undef;
+                    }
                 }
 
             // array access
@@ -422,10 +432,15 @@ play_expr (_self, _var, ...)
                     } else {
                         ref = &PL_sv_undef;
                     }
-                //} elsif ($LIST_OPS->{$name}) {
-                //    $ref = $LIST_OPS->{$name}->($ref, $args ? map { $self->play_expr($_) } @$args : ());
                 } else {
-                    ref = &PL_sv_undef;
+                    SV* table = get_sv("CGI::Ex::Template::LIST_OPS", TRUE);
+                    if (SvROK(table)
+                        && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
+                        SvGETMAGIC(*svp);
+                        ref = call_sv_with_args(_self, *svp, args, G_SCALAR, ref);
+                    } else {
+                        ref = &PL_sv_undef;
+                    }
                 }
             }
         }
