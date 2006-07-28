@@ -590,8 +590,10 @@ play_expr (_self, _var, ...)
                         && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
                         SvGETMAGIC(*svp);
                         ref = call_sv_with_args(*svp, _self, args, G_SCALAR, ref);
-                    //} elsif ($Args->{'is_namespace_during_compile'}) {
-                    //    return $var; # abort - can't fold namespace variable
+                    } else if ((svp = hv_fetch(Args, "is_namespace_during_compile", 27, FALSE))
+                               && SvTRUE(*svp)) {
+                        XPUSHs(_var);
+                        XSRETURN(1);
                     } else {
                         ref = &PL_sv_undef;
                     }
@@ -626,13 +628,28 @@ play_expr (_self, _var, ...)
 
     // allow for undefinedness
     if (! sv_defined(ref)) {
-//        if ($self->{'_debug_undef'}) {
-//            my $chunk = $var->[$i - 2];
-//            $chunk = $self->play_expr($chunk) if ref($chunk) eq 'ARRAY';
-//            die "$chunk is undefined\n";
-//        } else {
+        if ((svp = hv_fetch(self, "_debug_undef", 12, FALSE))
+            && SvTRUE(*svp)) {
+            svp = av_fetch(var, i - 2, FALSE);
+            if (svp) SvGETMAGIC(*svp);
+            SV* chunk = svp ? *svp : newSVpv("UNKNOWN", 0);
+            if (SvROK(chunk) && SvTYPE(SvRV(chunk)) == SVt_PVAV) {
+                PUSHMARK(SP);
+                XPUSHs(_self);
+                XPUSHs(chunk);
+                PUTBACK;
+                n = call_method("play_expr", G_SCALAR);
+                SPAGAIN;
+                chunk = (n >= 1) ? POPs : newSVpv("UNKNOWN", 0);
+                PUTBACK;
+            }
+            SV* msg = newSVpv("", 0);
+            sv_catsv(msg, (SV*)chunk);
+            sv_catpv(msg, " is undefined\n");
+            (void)die(SvPV_nolen(msg));
+        } else {
 //            $ref = $self->undefined_any($var);
-//        }
+        }
     }
 
     XPUSHs(ref);
