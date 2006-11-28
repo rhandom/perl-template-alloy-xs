@@ -300,7 +300,8 @@ play_expr (_self, _var, ...)
         }
     }
 
-    HV* seen_filters = newHV();
+    HV* seen_filters = (HV *)sv_2mortal((SV *)newHV()); //newHV();
+
     while (sv_defined(ref)) {
 
         // check at each point if the rurned thing was a code
@@ -626,8 +627,8 @@ play_expr (_self, _var, ...)
 
     // allow for undefinedness
     if (! sv_defined(ref)) {
-        if ((svp = hv_fetch(self, "_debug_undef", 12, FALSE))
-            && SvTRUE(*svp)) {
+        svp = hv_fetch(self, "_debug_undef", 12, FALSE);
+        if (svp && SvTRUE(*svp)) {
             svp = av_fetch(var, i - 2, FALSE);
             if (svp) SvGETMAGIC(*svp);
             SV* chunk = svp ? *svp : newSVpv("UNKNOWN", 0);
