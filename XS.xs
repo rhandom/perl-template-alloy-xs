@@ -90,7 +90,7 @@ static void xs_throw (SV* self, const char* exception_type, SV* msg) {
 
     PUSHMARK(SP);
     XPUSHs(self);
-    XPUSHs(newSVpv(exception_type, 0));
+    XPUSHs(sv_2mortal(newSVpv(exception_type, 0)));
     XPUSHs(msg);
     PUTBACK;
     I32 n = call_method("throw", G_VOID);
@@ -129,7 +129,7 @@ test_xs (self)
           RETVAL = SvNV(r);
           SV* foo = &PL_sv_undef;
           HV* bar = newHV();
-          SV** res = hv_store(bar, "foo", 3, newSVpv("123",0), 0);
+          SV** res = hv_store(bar, "foo", 3, sv_2mortal(newSVpv("123",0)), 0);
           SV** svp = hv_fetch(bar, "foo", 3, FALSE);
           RETVAL = SvNV(*svp);
           //          RETVAL = sv_defined(r) ? 7 : 8;
@@ -201,7 +201,7 @@ play_expr (_self, _var, ...)
             svp  = av_fetch((AV*)SvRV(tree), 0, FALSE);
             SvGETMAGIC(*svp);
             // if it is the .. operator then just return the number of elements it created
-            if (sv_eq(*svp, newSVpv("..", 0))) {
+            if (sv_eq(*svp, sv_2mortal(newSVpv("..", 0)))) {
                 PUSHMARK(SP);
                 XPUSHs(_self);
                 XPUSHs(tree);
@@ -300,7 +300,7 @@ play_expr (_self, _var, ...)
         }
     }
 
-    HV* seen_filters = (HV *)sv_2mortal((SV *)newHV()); //newHV();
+    HV* seen_filters = (HV *)sv_2mortal((SV *)newHV());
 
     while (sv_defined(ref)) {
 
@@ -321,7 +321,7 @@ play_expr (_self, _var, ...)
         } else {
             svp = av_fetch(var, i++, FALSE);
             SvGETMAGIC(*svp);
-            was_dot_call = sv_eq(*svp, newSVpv(".", 0));
+            was_dot_call = sv_eq(*svp, sv_2mortal(newSVpv(".", 0)));
         }
 
         svp = av_fetch(var, i++, FALSE);
@@ -436,7 +436,7 @@ play_expr (_self, _var, ...)
                         PUTBACK;
                         if (SvTRUE(ERRSV)) xs_throw(_self, "filter", ERRSV);
                     } else if (! SvROK(filter) || SvTYPE(SvRV(filter)) != SVt_PVAV) { // invalid filter
-                        SV* msg = newSVpv("invalid FILTER entry for '", 0);
+                        SV* msg = sv_2mortal(newSVpv("invalid FILTER entry for '", 0));
                         sv_catsv(msg, name);
                         sv_catpv(msg, "' (not a CODE ref)");
                         xs_throw(_self, "filter", msg);
@@ -490,14 +490,14 @@ play_expr (_self, _var, ...)
                                                 || sv_derived_from(coderef, "Template::Exception"))) {
                                             xs_throw(_self, "filter", coderef);
                                         }
-                                        SV* msg = newSVpv("invalid FILTER entry for '", 0);
+                                        SV* msg = sv_2mortal(newSVpv("invalid FILTER entry for '", 0));
                                         sv_catsv(msg, name);
                                         sv_catpv(msg, "' (not a CODE ref) (2)");
                                         xs_throw(_self, "filter", msg);
                                     }
                                 } else {
                                     PUTBACK;
-                                    SV* msg = newSVpv("invalid FILTER entry for '", 0);
+                                    SV* msg = sv_2mortal(newSVpv("invalid FILTER entry for '", 0));
                                     sv_catsv(msg, name);
                                     sv_catpv(msg, "' (not a CODE ref) (3)");
                                     xs_throw(_self, "filter", msg);
@@ -516,7 +516,7 @@ play_expr (_self, _var, ...)
                         } else { // this looks like our vmethods turned into "filters" (a filter stored under a name)
                             svp = hv_fetch(seen_filters, name_c, name_len, FALSE);
                             if (svp && SvTRUE(*svp)) {
-                                SV* msg = newSVpv("Recursive filter alias \"", 0);
+                                SV* msg = sv_2mortal(newSVpv("Recursive filter alias \"", 0));
                                 sv_catsv(msg, name);
                                 sv_catpv(msg, "\")");
                                 xs_throw(_self, "filter", msg);
@@ -525,7 +525,7 @@ play_expr (_self, _var, ...)
                             AV* newvar = newAV();
                             av_push(newvar, name);
                             av_push(newvar, newSViv(0));
-                            av_push(newvar, newSVpv("|", 1));
+                            av_push(newvar, sv_2mortal(newSVpv("|", 1)));
                             I32 j;
                             for (j = 0; j <= av_len(fa); j++) {
                                 svp = av_fetch(fa, j, FALSE);
@@ -547,7 +547,7 @@ play_expr (_self, _var, ...)
                             char*  _name_c = SvPV(_name, _name_len);
                             svp = hv_fetch(seen_filters, _name_c, _name_len, FALSE);
                             if (svp && SvTRUE(*svp)) {
-                                SV* msg = newSVpv("invalid FILTER entry for '", 0);
+                                SV* msg = sv_2mortal(newSVpv("invalid FILTER entry for '", 0));
                                 sv_catsv(msg, _name);
                                 sv_catpv(msg, "' (not a CODE ref) (4)");
                                 xs_throw(_self, "filter", msg);
@@ -631,7 +631,7 @@ play_expr (_self, _var, ...)
         if (svp && SvTRUE(*svp)) {
             svp = av_fetch(var, i - 2, FALSE);
             if (svp) SvGETMAGIC(*svp);
-            SV* chunk = svp ? *svp : newSVpv("UNKNOWN", 0);
+            SV* chunk = svp ? *svp : sv_2mortal(newSVpv("UNKNOWN", 0));
             if (SvROK(chunk) && SvTYPE(SvRV(chunk)) == SVt_PVAV) {
                 PUSHMARK(SP);
                 XPUSHs(_self);
@@ -639,15 +639,16 @@ play_expr (_self, _var, ...)
                 PUTBACK;
                 n = call_method("play_expr", G_SCALAR);
                 SPAGAIN;
-                chunk = (n >= 1) ? POPs : newSVpv("UNKNOWN", 0);
+                chunk = (n >= 1) ? POPs : sv_2mortal(newSVpv("UNKNOWN", 0));
                 PUTBACK;
             }
-            SV* msg = newSVpv("", 0);
+            SV* msg = sv_2mortal(newSVpv("", 0));
             sv_catsv(msg, (SV*)chunk);
             sv_catpv(msg, " is undefined\n");
             (void)die(SvPV_nolen(msg));
         } else {
-//            $ref = $self->undefined_any($var);
+ //            TODO
+ //            $ref = $self->undefined_any($var);
         }
     }
 
@@ -882,7 +883,7 @@ set_variable (_self, _var, val, ...)
         } else {
             svp = av_fetch(var, i++, FALSE);
             SvGETMAGIC(*svp);
-            was_dot_call = sv_eq(*svp, newSVpv(".", 0));
+            was_dot_call = sv_eq(*svp, sv_2mortal(newSVpv(".", 0)));
         }
 
         svp = av_fetch(var, i++, FALSE);
