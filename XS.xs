@@ -5,7 +5,26 @@
 
 #define sv_defined(sv) (sv && (SvIOK(sv) || SvNOK(sv) || SvPOK(sv) || SvROK(sv)))
 
+#if 1
+#define debug(self, data) _debug(self, data)
+#else
+#define debug(self, data)
+#endif
+
 ///----------------------------------------------------------------///
+
+void _debug (SV* self, SV* data) {
+    dSP;
+    I32 n;
+    PUSHMARK(SP);
+    XPUSHs(self);
+    XPUSHs(data);
+    PUTBACK;
+    n = call_method("__dump_any", G_SCALAR);
+    SPAGAIN;
+    PUTBACK;
+    return;
+}
 
 static SV* call_sv_with_args (SV* code, SV* self, SV* args, I32 flags, SV* optional_obj) {
     dSP;
@@ -386,7 +405,7 @@ play_expr (_self, _var, ...)
                 av_push(array, ref);
                 ref = call_sv_with_args(*svp, _self, args, G_SCALAR, newRV_noinc((SV*)array));
             } else {
-                SV* filter = &PL_sv_undef;
+                SV* filter = Nullsv;
                 if(svp = hv_fetch(self, "FILTERS", 7, FALSE)) { // filter configured in Template args
                     SvGETMAGIC(*svp);
                     table = *svp;
@@ -436,7 +455,7 @@ play_expr (_self, _var, ...)
                         PUTBACK;
                         if (SvTRUE(ERRSV)) xs_throw(_self, "filter", ERRSV);
                     } else if (! SvROK(filter) || SvTYPE(SvRV(filter)) != SVt_PVAV) { // invalid filter
-                        SV* msg = sv_2mortal(newSVpv("invalid FILTER entry for '", 0));
+                        SV* msg = newSVpv("invalid FILTER entry for '", 0);
                         sv_catsv(msg, name);
                         sv_catpv(msg, "' (not a CODE ref)");
                         xs_throw(_self, "filter", msg);
@@ -490,14 +509,14 @@ play_expr (_self, _var, ...)
                                                 || sv_derived_from(coderef, "Template::Exception"))) {
                                             xs_throw(_self, "filter", coderef);
                                         }
-                                        SV* msg = sv_2mortal(newSVpv("invalid FILTER entry for '", 0));
+                                        SV* msg = newSVpv("invalid FILTER entry for '", 0);
                                         sv_catsv(msg, name);
                                         sv_catpv(msg, "' (not a CODE ref) (2)");
                                         xs_throw(_self, "filter", msg);
                                     }
                                 } else {
                                     PUTBACK;
-                                    SV* msg = sv_2mortal(newSVpv("invalid FILTER entry for '", 0));
+                                    SV* msg = newSVpv("invalid FILTER entry for '", 0);
                                     sv_catsv(msg, name);
                                     sv_catpv(msg, "' (not a CODE ref) (3)");
                                     xs_throw(_self, "filter", msg);
@@ -516,7 +535,7 @@ play_expr (_self, _var, ...)
                         } else { // this looks like our vmethods turned into "filters" (a filter stored under a name)
                             svp = hv_fetch(seen_filters, name_c, name_len, FALSE);
                             if (svp && SvTRUE(*svp)) {
-                                SV* msg = sv_2mortal(newSVpv("Recursive filter alias \"", 0));
+                                SV* msg = newSVpv("Recursive filter alias \"", 0);
                                 sv_catsv(msg, name);
                                 sv_catpv(msg, "\")");
                                 xs_throw(_self, "filter", msg);
@@ -525,7 +544,7 @@ play_expr (_self, _var, ...)
                             AV* newvar = newAV();
                             av_push(newvar, name);
                             av_push(newvar, newSViv(0));
-                            av_push(newvar, sv_2mortal(newSVpv("|", 1)));
+                            av_push(newvar, newSVpv("|", 1));
                             I32 j;
                             for (j = 0; j <= av_len(fa); j++) {
                                 svp = av_fetch(fa, j, FALSE);
@@ -547,7 +566,7 @@ play_expr (_self, _var, ...)
                             char*  _name_c = SvPV(_name, _name_len);
                             svp = hv_fetch(seen_filters, _name_c, _name_len, FALSE);
                             if (svp && SvTRUE(*svp)) {
-                                SV* msg = sv_2mortal(newSVpv("invalid FILTER entry for '", 0));
+                                SV* msg = newSVpv("invalid FILTER entry for '", 0);
                                 sv_catsv(msg, _name);
                                 sv_catpv(msg, "' (not a CODE ref) (4)");
                                 xs_throw(_self, "filter", msg);
