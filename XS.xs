@@ -26,27 +26,24 @@ void _debug (SV* self, SV* data) {
     return;
 }
 
-static SV* call_sv_with_args (SV* code, SV* self, SV* args, I32 flags, SV* optional_obj) {
+static SV* call_sv_with_args (SV* code, SV* self, AV* args, I32 flags, SV* optional_obj) {
     dSP;
     I32 n;
     I32 i;
     I32 j;
     SV** svp;
     AV* args_real = newAV();
-    if (SvROK(args)) {
-        AV* args_fake = (AV*)SvRV(args);
-        for (i = 0; i <= av_len(args_fake); i++) {
-            svp = av_fetch(args_fake, i, FALSE);
-            SvGETMAGIC(*svp);
-            PUSHMARK(SP);
-            XPUSHs(self);
-            XPUSHs(*svp);
-            PUTBACK;
-            n = call_method("play_expr", G_ARRAY);
-            SPAGAIN;
-            for (j = 0; j < n; j++) av_push(args_real, POPs);
-            PUTBACK;
-        }
+    for (i = 0; i <= av_len(args); i++) {
+        svp = av_fetch(args, i, FALSE);
+        SvGETMAGIC(*svp);
+        PUSHMARK(SP);
+        XPUSHs(self);
+        XPUSHs(*svp);
+        PUTBACK;
+        n = call_method("play_expr", G_ARRAY);
+        SPAGAIN;
+        for (j = 0; j < n; j++) av_push(args_real, POPs);
+        PUTBACK;
     }
     PUSHMARK(SP);
     if (sv_defined(optional_obj)) XPUSHs(optional_obj);
@@ -193,7 +190,7 @@ play_expr (_self, _var, ...)
 
     svp = av_fetch(var, i++, FALSE);
     SvGETMAGIC(*svp);
-    SV* args = (SV*)(*svp);
+    AV* args = (SvROK(*svp) && SvTYPE(SvRV(*svp)) == SVt_PVAV) ? (AV*)SvRV(*svp) : newAV();
 
     //warn "play_expr: begin \"$name\"\n" if trace;
     if (SvROK(name)) {
@@ -325,6 +322,7 @@ play_expr (_self, _var, ...)
 
         // check at each point if the rurned thing was a code
         if (SvROK(ref) && SvTYPE(SvRV(ref)) == SVt_PVCV) {
+            //debug(_self, _var);
             ref = call_sv_with_args(ref, _self, args, G_ARRAY, Nullsv);
             if (! sv_defined(ref)) break;
         }
@@ -359,7 +357,7 @@ play_expr (_self, _var, ...)
             break;
         }
         SvGETMAGIC(*svp);
-        args = (SV*)(*svp);
+        args = (SvROK(*svp) && SvTYPE(SvRV(*svp)) == SVt_PVAV) ? (AV*)SvRV(*svp) : newAV();
 
         //warn "play_expr: nested \"$name\"\n" if trace;
 
@@ -480,16 +478,14 @@ play_expr (_self, _var, ...)
                                 PUTBACK;
                                 PUSHMARK(SP);
                                 XPUSHs(context);
-                                if (args && SvROK(args)) {
-                                    I32 j;
-                                    for (j = 0; j <= av_len((AV*)SvRV(args)); j++) {
-                                        svp = av_fetch((AV*)SvRV(args), j, FALSE);
-                                        if (svp) {
-                                            SvGETMAGIC(*svp);
-                                            XPUSHs(*svp);
-                                        } else {
-                                            XPUSHs(&PL_sv_undef);
-                                        }
+                                I32 j;
+                                for (j = 0; j <= av_len(args); j++) {
+                                    svp = av_fetch(args, j, FALSE);
+                                    if (svp) {
+                                        SvGETMAGIC(*svp);
+                                        XPUSHs(*svp);
+                                    } else {
+                                        XPUSHs(&PL_sv_undef);
                                     }
                                 }
                                 PUTBACK;
@@ -806,7 +802,7 @@ set_variable (_self, _var, val, ...)
 
     svp = av_fetch(var, i++, FALSE);
     SvGETMAGIC(*svp);
-    SV* args = (SV*)(*svp);
+    AV* args = (SvROK(*svp) && SvTYPE(SvRV(*svp)) == SVt_PVAV) ? (AV*)SvRV(*svp) : newAV();
 
     if (SvROK(name)) {
         if (SvTYPE(SvRV(name)) == SVt_PVAV) { // named access (ie via $name.foo)
@@ -921,7 +917,7 @@ set_variable (_self, _var, val, ...)
             break;
         }
         SvGETMAGIC(*svp);
-        args = (SV*)(*svp);
+        args = (SvROK(*svp) && SvTYPE(SvRV(*svp)) == SVt_PVAV) ? (AV*)SvRV(*svp) : newAV();
 
         // allow for named portions of a variable name (foo.$name.bar)
         if (SvROK(name)) {
@@ -965,16 +961,14 @@ set_variable (_self, _var, val, ...)
                 if (i >= av_len(var)) {
                     lvalueish = TRUE;
                     AV* newargs = newAV();
-                    if (SvROK(args) && SvTYPE(SvRV(args)) == SVt_PVAV) {
-                        I32 j;
-                        for (j = 0; j <= av_len((AV*)SvRV(args)); j++) {
-                            svp = av_fetch((AV*)SvRV(args), j, FALSE);
-                            if (svp) SvGETMAGIC(*svp);
-                            av_push(newargs, svp ? *svp : &PL_sv_undef);
-                        }
+                    I32 j;
+                    for (j = 0; j <= av_len(args); j++) {
+                        svp = av_fetch(args, j, FALSE);
+                        if (svp) SvGETMAGIC(*svp);
+                        av_push(newargs, svp ? *svp : &PL_sv_undef);
                     }
                     av_push(newargs, val);
-                    args = newRV_noinc((SV*)newargs);
+                    args = newargs; //newRV_noinc((SV*)newargs);
                 }
                 SV* coderef = newRV_noinc((SV*)GvCV(gv));
                 ref = call_sv_with_args(coderef, _self, args, G_ARRAY, ref);
