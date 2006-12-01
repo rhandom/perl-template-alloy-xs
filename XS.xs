@@ -576,8 +576,7 @@ play_expr (_self, _var, ...)
                     char* package = sv_reftype(SvRV(ref), 1);
                     croak("Can't locate object method \"%s\" via package %s", name_c, package);
                 } else {
-                    SV* coderef = newRV_noinc((SV*)GvCV(gv));
-                    ref = call_sv_with_args(coderef, _self, args, G_ARRAY, ref);
+                    ref = call_sv_with_args((SV*)GvCV(gv), _self, args, G_ARRAY, ref);
                     if (! sv_defined(ref)) break;
                     continue;
                 }
@@ -962,8 +961,7 @@ set_variable (_self, _var, val, ...)
                     av_push(newargs, val);
                     args = newargs; //newRV_noinc((SV*)newargs);
                 }
-                SV* coderef = newRV_noinc((SV*)GvCV(gv));
-                ref = call_sv_with_args(coderef, _self, args, G_ARRAY, ref);
+                ref = call_sv_with_args((SV*)GvCV(gv), _self, args, G_ARRAY, ref);
                 if (lvalueish || ! sv_defined(ref)) {
                     XPUSHs(&PL_sv_undef);
                     XSRETURN(1);
