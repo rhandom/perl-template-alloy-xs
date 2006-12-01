@@ -28,12 +28,11 @@ void _debug (SV* self, SV* data) {
 
 static SV* call_sv_with_args (SV* code, SV* self, AV* args, I32 flags, SV* optional_obj) {
     dSP;
-    I32 n;
-    I32 i;
-    I32 j;
+    I32 n, i, j, count = av_len(args);
     SV** svp;
-    AV* args_real = newAV();
-    for (i = 0; i <= av_len(args); i++) {
+    PUSHMARK(SP);
+    if (sv_defined(optional_obj)) XPUSHs(optional_obj);
+    for (i = 0; i <= count; i++) {
         svp = av_fetch(args, i, FALSE);
         SvGETMAGIC(*svp);
         PUSHMARK(SP);
@@ -42,15 +41,8 @@ static SV* call_sv_with_args (SV* code, SV* self, AV* args, I32 flags, SV* optio
         PUTBACK;
         n = call_method("play_expr", G_ARRAY);
         SPAGAIN;
-        for (j = 0; j < n; j++) av_push(args_real, POPs);
+        //for (j = 0; j < n; j++) XPUSHs(POPs); // noop
         PUTBACK;
-    }
-    PUSHMARK(SP);
-    if (sv_defined(optional_obj)) XPUSHs(optional_obj);
-    for (i = 0; i <= av_len(args_real); i++) {
-        svp = av_fetch(args_real, i, FALSE);
-        SvGETMAGIC(*svp);
-        XPUSHs(*svp);
     }
     PUTBACK;
     n = call_sv(code, flags);
