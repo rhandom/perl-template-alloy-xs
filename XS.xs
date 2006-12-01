@@ -182,7 +182,7 @@ play_expr (_self, _var, ...)
 
     svp = av_fetch(var, i++, FALSE);
     SvGETMAGIC(*svp);
-    AV* args = (SvROK(*svp) && SvTYPE(SvRV(*svp)) == SVt_PVAV) ? (AV*)SvRV(*svp) : newAV();
+    AV* args = (SvROK(*svp) && SvTYPE(SvRV(*svp)) == SVt_PVAV) ? (AV*)SvRV(*svp) : (AV*)sv_2mortal((SV*)newAV());
 
     //warn "play_expr: begin \"$name\"\n" if trace;
     if (SvROK(name)) {
@@ -349,7 +349,7 @@ play_expr (_self, _var, ...)
             break;
         }
         SvGETMAGIC(*svp);
-        args = (SvROK(*svp) && SvTYPE(SvRV(*svp)) == SVt_PVAV) ? (AV*)SvRV(*svp) : newAV();
+        args = (SvROK(*svp) && SvTYPE(SvRV(*svp)) == SVt_PVAV) ? (AV*)SvRV(*svp) : (AV*)sv_2mortal((SV*)newAV());
 
         //warn "play_expr: nested \"$name\"\n" if trace;
 
@@ -570,7 +570,7 @@ play_expr (_self, _var, ...)
 
             // method calls on objects
             if (was_dot_call && sv_isobject(ref)) {
-                HV* stash = SvSTASH((SV*) SvRV(ref));
+                HV* stash = SvSTASH((SV*)SvRV(ref));
                 GV* gv = gv_fetchmethod_autoload(stash, name_c, 1);
                 if (! gv) {
                     char* package = sv_reftype(SvRV(ref), 1);
@@ -794,7 +794,7 @@ set_variable (_self, _var, val, ...)
 
     svp = av_fetch(var, i++, FALSE);
     SvGETMAGIC(*svp);
-    AV* args = (SvROK(*svp) && SvTYPE(SvRV(*svp)) == SVt_PVAV) ? (AV*)SvRV(*svp) : newAV();
+    AV* args = (SvROK(*svp) && SvTYPE(SvRV(*svp)) == SVt_PVAV) ? (AV*)SvRV(*svp) : (AV*)sv_2mortal((SV*)newAV());
 
     if (SvROK(name)) {
         if (SvTYPE(SvRV(name)) == SVt_PVAV) { // named access (ie via $name.foo)
@@ -909,7 +909,7 @@ set_variable (_self, _var, val, ...)
             break;
         }
         SvGETMAGIC(*svp);
-        args = (SvROK(*svp) && SvTYPE(SvRV(*svp)) == SVt_PVAV) ? (AV*)SvRV(*svp) : newAV();
+        args = (SvROK(*svp) && SvTYPE(SvRV(*svp)) == SVt_PVAV) ? (AV*)SvRV(*svp) : (AV*)sv_2mortal((SV*)newAV());
 
         // allow for named portions of a variable name (foo.$name.bar)
         if (SvROK(name)) {
