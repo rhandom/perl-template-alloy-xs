@@ -15,13 +15,14 @@
 
 void _debug (SV* self, SV* data) {
     dSP;
-    I32 n;
+    I32 n, i;
     PUSHMARK(SP);
     XPUSHs(self);
     XPUSHs(data);
     PUTBACK;
     n = call_method("__dump_any", G_SCALAR);
     SPAGAIN;
+    for (i = 0; i < n; i++) POPs;
     PUTBACK;
     return;
 }
@@ -64,6 +65,7 @@ static SV* call_sv_with_args (SV* code, SV* self, AV* args, I32 flags, SV* optio
             PUTBACK;
         } else {
             result = POPs;
+            for (i = 1; i < n; i++) POPs;
             PUTBACK;
             if (sv_defined(result)) {
                 SV* errsv = get_sv("@", TRUE);
@@ -85,6 +87,214 @@ static bool name_is_private (const char* name) {
     return (*name == '_' || *name == '.') ? 1 : 0;
 }
 
+static void _play_foreach (SV* self, SV* ref, SV* node, SV* out_ref) {
+    dSP;
+    I32 i, n;
+    SV** svp;
+
+    // ref contains the variable name (if any) and the array to foreach on
+    svp = av_fetch((AV*)SvRV(ref), 0, FALSE);
+    SvGETMAGIC(*svp);
+    SV* var = *svp;
+    svp = av_fetch((AV*)SvRV(ref), 1, FALSE);
+    SvGETMAGIC(*svp);
+    SV* items = *svp;
+
+    // turn items into the array that it actually will be
+    PUSHMARK(SP);
+    XPUSHs(self);
+    XPUSHs(items);
+    PUTBACK;
+    n = call_method("play_expr", G_SCALAR);
+    SPAGAIN;
+    items = POPs;
+    for (i = 1; i < n; i++) POPs;
+    PUTBACK;
+
+    // make sure we got something back
+    if (! sv_defined(items) || ! SvROK(items)) return;
+
+    // turn the items into an iterator if it isn't already one
+    if (! sv_isobject(items)
+        || (! sv_derived_from(items, "CGI::Ex::Template::Iterator") // hrm - don't really like hard coded names
+            && ! sv_derived_from(items, "Template::Iterator"))) {
+        PUSHMARK(SP);
+        XPUSHs(sv_2mortal(newSVpv("CGI::Ex::Template::Iterator", 0))); // hrm - even worse here
+        XPUSHs(items);
+        PUTBACK;
+        n = call_method("new", G_SCALAR);
+        SPAGAIN;
+        items = POPs;
+        for (i = 1; i < n; i++) POPs;
+        PUTBACK;
+
+    }
+
+    svp = av_fetch((AV*)SvRV(node), 4, FALSE);
+    SvGETMAGIC(*svp);
+    SV* sub_tree = *svp;
+
+    // localize the loop object into the stash
+    svp = hv_fetch((HV*)SvRV(self), "_vars", 5, FALSE);
+    SvGETMAGIC(*svp);
+    SV* _vars = *svp;
+    HV* vars = (HV*)SvRV(_vars);
+    bool loop_exists = hv_exists(vars, "loop", 4);
+    SV* old_loop = (loop_exists) ? hv_delete(vars, "loop", 4, 0) : Nullsv;
+
+    SvREFCNT_inc(items);
+    hv_store(vars, "loop", 4, items, 0);
+
+    //sv_catsv(SvRV(out_ref), sv_2mortal(newSVpv("Test", 0)));
+
+    _debug(self, items);
+
+    PUSHMARK(SP);
+    XPUSHs(items);
+    PUTBACK;
+    n = call_method("get_first", G_ARRAY); // todo - eval to catch perl errors - so we can put the stash back
+    SPAGAIN;
+    SV* error = (n >= 2) ? POPs : Nullsv;
+    SV* item  = (n >= 1) ? POPs : Nullsv;
+    I32 j;
+    for (j = 2; j < n; j++) POPs;
+    PUTBACK;
+
+    // here is the iteration
+    while (! SvTRUE(error)) {
+        PUSHMARK(SP);
+        XPUSHs(self);
+        XPUSHs(var);
+        XPUSHs(item);
+        PUTBACK;
+        n = call_method("set_variable", G_VOID);
+        SPAGAIN;
+        PUTBACK;
+
+        PUSHMARK(SP);
+        XPUSHs(self);
+        XPUSHs(sub_tree);
+        XPUSHs(out_ref);
+        PUTBACK;
+        n = call_method("execute_tree", G_VOID | G_EVAL);
+        SPAGAIN;
+        PUTBACK;
+
+        SV* errsv = get_sv("@", TRUE);
+        if (SvTRUE(errsv)) {
+            if (sv_isobject(errsv)
+                && (sv_derived_from(errsv, "CGI::Ex::Template::Exception")
+                    || sv_derived_from(errsv, "Template::Exception"))) {
+                PUSHMARK(SP);
+                XPUSHs(errsv);
+                PUTBACK;
+                n = call_method("type", G_SCALAR); // todo - eval to catch perl errors - so we can put the stash back
+                SPAGAIN;
+                SV* type = POPs;
+                PUTBACK;
+                if (sv_eq(type, sv_2mortal(newSVpv("next", 0)))) {
+                    // do nothing - fall down to the next
+                } else if (sv_eq(type, sv_2mortal(newSVpv("last", 0)))) {
+                    break; // exit the while loop
+                } else {
+                    (void)die(Nullch); // rethrow exception
+                }
+            } else {
+                (void)die(Nullch);
+            }
+        }
+
+        PUSHMARK(SP);
+        XPUSHs(items);
+        PUTBACK;
+        n = call_method("get_next", G_ARRAY); // todo - eval to catch perl errors - so we can put the stash back
+        SPAGAIN;
+        error = (n >= 2) ? POPs : Nullsv;
+        item  = (n >= 1) ? POPs : Nullsv;
+        I32 j;
+        for (j = 2; j < n; j++) POPs;
+        PUTBACK;
+
+    }
+
+    if (SvTRUE(error) && ! sv_eq(error, sv_2mortal(newSVpv("3", 0)))) {
+        SV* errsv = get_sv("@", TRUE);
+        sv_setsv(errsv, error);
+        (void)die(Nullch);
+    }
+
+    // restore the old loop
+    hv_delete(vars, "loop", 4, G_DISCARD);
+    if (loop_exists) {
+        SvREFCNT_inc(old_loop);
+        hv_store(vars, "loop", 4, old_loop, 0);
+    }
+
+    return;
+}
+
+
+//    ### if the FOREACH tag sets a var - then nothing but the loop var gets localized
+//    if (defined $var) {
+//        my ($item, $error) = $items->get_first;
+//        while (! $error) {
+//
+//            $self->set_variable($var, $item);
+//
+//            ### execute the sub tree
+//            eval { $self->execute_tree($sub_tree, $out_ref) };
+//            if (my $err = $@) {
+//                if (UNIVERSAL::isa($err, $PACKAGE_EXCEPTION)) {
+//                    if ($err->type eq 'next') {
+//                        ($item, $error) = $items->get_next;
+//                        next;
+//                    }
+//                    last if $err->type =~ /last|break/;
+//                }
+//                die $err;
+//            }
+//
+//            ($item, $error) = $items->get_next;
+//        }
+//        die $error if $error && $error != 3; # Template::Constants::STATUS_DONE;
+//    ### if the FOREACH tag doesn't set a var - then everything gets localized
+//    } else {
+//
+//        ### localize variable access for the foreach
+//        my $swap = $self->{'_vars'};
+//        local $self->{'_vars'} = my $copy = {%$swap};
+//
+//        ### iterate use the iterator object
+//        #foreach (my $i = $items->index; $i <= $#$vals; $items->index(++ $i)) {
+//        my ($item, $error) = $items->get_first;
+//        while (! $error) {
+//
+//            if (ref($item) eq 'HASH') {
+//                @$copy{keys %$item} = values %$item;
+//            }
+//
+//            ### execute the sub tree
+//            eval { $self->execute_tree($sub_tree, $out_ref) };
+//            if (my $err = $@) {
+//                if (UNIVERSAL::isa($err, $PACKAGE_EXCEPTION)) {
+//                    if ($err->type eq 'next') {
+//                        ($item, $error) = $items->get_next;
+//                        next;
+//                    }
+//                    last if $err->type =~ /last|break/;
+//                }
+//                die $err;
+//            }
+//
+//            ($item, $error) = $items->get_next;
+//        }
+//        die $error if $error && $error != 3; # Template::Constants::STATUS_DONE;
+//    }
+//
+//    return undef;
+//}
+
+
 static void xs_throw (SV* self, const char* exception_type, SV* msg) {
     dSP;
 
@@ -103,6 +313,8 @@ static void xs_throw (SV* self, const char* exception_type, SV* msg) {
     PUTBACK;
     I32 n = call_method("throw", G_VOID);
     SPAGAIN;
+    I32 i;
+    for (i = 0; i < n; i++) POPs;
     PUTBACK;
     return;
 }
@@ -125,10 +337,11 @@ test_xs (self)
         PUSHMARK(SP);
         XPUSHs(self);
         PUTBACK;
-        I32 n;
+        I32 n, i;
         n = call_method("foobar", G_ARRAY);
         SPAGAIN;
         SV* r = POPs;
+        for (i = 1; i < n; i++) POPs;
         PUTBACK;
 
         if (n > 1) {
@@ -226,6 +439,8 @@ play_expr (_self, _var, ...)
                 n = call_method("play_operator", G_SCALAR);
                 SPAGAIN;
                 ref = POPs;
+                I32 j;
+                for (j = 1; j < n; j++) POPs;
                 PUTBACK;
             }
             break;
@@ -239,6 +454,8 @@ play_expr (_self, _var, ...)
             SPAGAIN;
             name = POPs;
             name_c = SvPV(name, name_len);
+            I32 j;
+            for (j = 1; j < n; j++) POPs;
             PUTBACK;
 
             if (sv_defined(name)) {
@@ -364,6 +581,8 @@ play_expr (_self, _var, ...)
                 SPAGAIN;
                 name = POPs;
                 name_c = SvPV(name, name_len);
+                I32 j;
+                for (j = 1; j < n; j++) POPs;
                 PUTBACK;
                 if (! sv_defined(name)) {
                     ref = &PL_sv_undef;
@@ -430,6 +649,9 @@ play_expr (_self, _var, ...)
                             SvGETMAGIC(*svp);
                             filter = *svp;
                         }
+                    } else {
+                      I32 j;
+                      for (j = 0; j < n; j++) POPs;
                     }
                     PUTBACK;
                 }
@@ -441,7 +663,12 @@ play_expr (_self, _var, ...)
                         PUTBACK;
                         n = call_sv(filter, G_SCALAR | G_EVAL);
                         SPAGAIN;
-                        if (n == 1) ref = POPs;
+                        if (n == 1) {
+                          ref = POPs;
+                        } else {
+                          I32 j;
+                          for (j = 0; j < n; j++) POPs;
+                        }
                         PUTBACK;
                         if (SvTRUE(ERRSV)) xs_throw(_self, "filter", ERRSV);
                     } else if (! SvROK(filter) || SvTYPE(SvRV(filter)) != SVt_PVAV) { // invalid filter
@@ -467,6 +694,10 @@ play_expr (_self, _var, ...)
                                 n = call_method("context", G_SCALAR);
                                 SPAGAIN;
                                 SV* context = (n == 1) ? POPs : Nullsv;
+                                if (n > 1) {
+                                  I32 j;
+                                  for (j = 1; j < n; j++) POPs;
+                                }
                                 PUTBACK;
                                 PUSHMARK(SP);
                                 XPUSHs(context);
@@ -489,6 +720,8 @@ play_expr (_self, _var, ...)
                                 } else if (n >= 1) {
                                     coderef = POPs;
                                     SV* err = (n >= 2) ? POPs : Nullsv;
+                                    I32 j;
+                                    for (j = 1; j < n; j++) POPs;
                                     PUTBACK;
                                     if (! SvTRUE(coderef) && SvTRUE(err)) xs_throw(_self, "filter", err);
                                     if (! SvROK(coderef) || SvTYPE(SvRV(coderef)) != SVt_PVCV) {
@@ -517,6 +750,8 @@ play_expr (_self, _var, ...)
                             n = call_sv(coderef, G_EVAL | G_SCALAR);
                             SPAGAIN;
                             ref = (n >= 1) ? POPs : &PL_sv_undef;
+                            I32 j;
+                            for (j = 1; j < n; j++) POPs;
                             PUTBACK;
                             if (SvTRUE(ERRSV)) xs_throw(_self, "filter", ERRSV);
 
@@ -646,6 +881,8 @@ play_expr (_self, _var, ...)
                 n = call_method("play_expr", G_SCALAR);
                 SPAGAIN;
                 chunk = (n >= 1) ? POPs : sv_2mortal(newSVpv("UNKNOWN", 0));
+                I32 j;
+                for (j = 1; j < n; j++) POPs;
                 PUTBACK;
             }
             SV* msg = sv_2mortal(newSVpv("", 0));
@@ -712,6 +949,8 @@ execute_tree (_self, _tree, _out_ref)
                     SPAGAIN;
                     if (n >= 1) {
                         add_str = POPs;
+                        I32 j;
+                        for (j = 1; j < n; j++) POPs;
                         if (sv_defined(add_str)) sv_catsv(out_ref, add_str);
                     }
                     PUTBACK;
@@ -735,22 +974,33 @@ execute_tree (_self, _tree, _out_ref)
             if (! svp) continue;
             directive_node = (AV*)SvRV(*svp);
 
-            svp = av_fetch(directive_node, 1, FALSE);
-            if (! svp) continue;
+            // attempt to handle FOREACH natively
+            if (sv_eq(directive, sv_2mortal(newSVpv("FOREACH", 0)))
+                || sv_eq(directive, sv_2mortal(newSVpv("FOR", 0)))) {
+                //if (*directive_c == 'FOREACH' || *directive_c == 'FOR') {
+                _play_foreach(_self, details, _node, _out_ref);
 
-            PUSHMARK(SP);
-            XPUSHs(_self);
-            XPUSHs(details);
-            XPUSHs(_node);
-            XPUSHs(_out_ref);
-            PUTBACK;
-            n = call_sv(*svp, G_SCALAR);
-            SPAGAIN;
-            if (n >= 1) {
-                add_str = POPs;
-                if (sv_defined(add_str)) sv_catsv(out_ref, add_str);
+            } else {
+
+                svp = av_fetch(directive_node, 1, FALSE);
+                if (! svp) continue;
+
+                PUSHMARK(SP);
+                XPUSHs(_self);
+                XPUSHs(details);
+                XPUSHs(_node);
+                XPUSHs(_out_ref);
+                PUTBACK;
+                n = call_sv(*svp, G_SCALAR);
+                SPAGAIN;
+                if (n >= 1) {
+                    add_str = POPs;
+                    I32 j;
+                    for (j = 1; j < n; j++) POPs;
+                    if (sv_defined(add_str)) sv_catsv(out_ref, add_str);
+                }
+                PUTBACK;
             }
-            PUTBACK;
         }
 
         XPUSHi(1);
@@ -805,6 +1055,8 @@ set_variable (_self, _var, val, ...)
             SPAGAIN;
             name = POPs;
             name_c = SvPV(name, name_len);
+            I32 j;
+            for (j = 1; j < n; j++) POPs;
             PUTBACK;
 
             if (! sv_defined(name)         // no defined
@@ -921,6 +1173,8 @@ set_variable (_self, _var, val, ...)
                 SPAGAIN;
                 name = POPs;
                 name_c = SvPV(name, name_len);
+                I32 j;
+                for (j = 1; j < n; j++) POPs;
                 PUTBACK;
                 if (! sv_defined(name)) {
                     XPUSHs(&PL_sv_undef);
