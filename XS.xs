@@ -147,7 +147,7 @@ static void _play_foreach (SV* self, SV* ref, SV* node, SV* out_ref) {
 
     //sv_catsv(SvRV(out_ref), sv_2mortal(newSVpv("Test", 0)));
 
-    _debug(self, items);
+    //_debug(self, items);
 
     PUSHMARK(SP);
     XPUSHs(items);
@@ -975,12 +975,12 @@ execute_tree (_self, _tree, _out_ref)
             directive_node = (AV*)SvRV(*svp);
 
             // attempt to handle FOREACH natively
-            if (sv_eq(directive, sv_2mortal(newSVpv("FOREACH", 0)))
-                || sv_eq(directive, sv_2mortal(newSVpv("FOR", 0)))) {
-                //if (*directive_c == 'FOREACH' || *directive_c == 'FOR') {
-                _play_foreach(_self, details, _node, _out_ref);
-
-            } else {
+            //if (sv_eq(directive, sv_2mortal(newSVpv("FOREACH", 0)))
+            //    || sv_eq(directive, sv_2mortal(newSVpv("FOR", 0)))) {
+            //    //if (*directive_c == 'FOREACH' || *directive_c == 'FOR') {
+            //    _play_foreach(_self, details, _node, _out_ref);
+            //
+            //} else {
 
                 svp = av_fetch(directive_node, 1, FALSE);
                 if (! svp) continue;
@@ -1000,7 +1000,7 @@ execute_tree (_self, _tree, _out_ref)
                     if (sv_defined(add_str)) sv_catsv(out_ref, add_str);
                 }
                 PUTBACK;
-            }
+            //}
         }
 
         XPUSHi(1);
