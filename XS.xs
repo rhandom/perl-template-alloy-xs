@@ -409,9 +409,8 @@ play_expr (_self, _var, ...)
         if (! sv_defined(*svp)) {
             svp  = av_fetch((AV*)SvRV(name), 1, FALSE);
             SvGETMAGIC(*svp);
-            // if it is the .. operator then just return the number of elements it created
-            if (sv_eq(*svp, sv_2mortal(newSVpv("..", 0)))) {
-                // BUGS/TODO - allow for non wantarray to not return
+            // if it is the .. operator then just return the number of elements it created (in array context)
+            if (GIMME_V == G_ARRAY && sv_eq(*svp, sv_2mortal(newSVpv("..", 0)))) {
                 PUSHMARK(SP);
                 XPUSHs(_self);
                 XPUSHs(name);
