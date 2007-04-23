@@ -2,13 +2,14 @@ package CGI::Ex::Template::XS;
 
 =head1 NAME
 
-CGI::Ex::Template::XS - Attempted XS version of CGI::Ex::Template
+CGI::Ex::Template::XS - XS version of key parts of CGI::Ex::Template
 
 =cut
 
 use strict;
 use warnings;
 use XSLoader;
+use CGI::Ex::Template 2.10;
 use base qw(CGI::Ex::Template);
 
 our $VERSION = '0.01';
@@ -30,14 +31,45 @@ __END__
 
     use CGI::Ex::Template::XS;
 
+    my $obj = CGI::Ex::Template::XS->new;
+
     # see the CGI::Ex::Template documentation
 
 =head1 DESCRIPTION
 
 This is an attempt to get XS speeds for the CGI::Ex::Template functionality.
 
+All of the methods of CGI::Ex::Template are available.  All configuration
+parameters, and all output should be the same.  You should be able
+to use this package directly in place of CGI::Ex::Template.
+
+=head1 BUGS/TODO
+
+=over 4
+
+=item Memory leak
+
+The use of FILTER aliases causes a memory leak in a cached environment.
+The following is an example of a construct that can cause the leak.
+
+  [% n=1; n FILTER echo=repeat(2); n FILTER echo %]
+
+Anybody with input or insight into fixing the code is welcome to submit
+a patch :).
+
+=item undefined_any
+
+The XS version doesn't call undefined_any when play_expr finds an
+undefined value.  It needs to.
+
+=back
+
 =head1 AUTHOR
 
 Paul Seamons, E<lt>paul@seamons.comE<gt>
+
+=head1 LICENSE
+
+This module may be distributed under the same terms as Perl itself.
 
 =cut
