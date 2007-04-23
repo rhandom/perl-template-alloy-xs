@@ -411,7 +411,7 @@ play_expr (_self, _var, ...)
             SvGETMAGIC(*svp);
             // if it is the .. operator then just return the number of elements it created
             if (sv_eq(*svp, sv_2mortal(newSVpv("..", 0)))) {
-                // TODO - allow for non wantarray to not return
+                // BUGS/TODO - allow for non wantarray to not return
                 PUSHMARK(SP);
                 XPUSHs(_self);
                 XPUSHs(name);
@@ -757,6 +757,7 @@ play_expr (_self, _var, ...)
                             av_push(newvar, newSViv(0));
                             av_push(newvar, newSVpv("|", 1));
                             I32 j;
+                            // BUGS/TODO - there is a memory leak right here - the newvar doesn't seem to get released
                             for (j = 0; j <= av_len(fa); j++) {
                                 svp = av_fetch(fa, j, FALSE);
                                 if (svp) SvGETMAGIC(*svp);
@@ -878,7 +879,7 @@ play_expr (_self, _var, ...)
             sv_catpv(msg, " is undefined\n");
             (void)die(SvPV_nolen(msg));
         } else {
- //            TODO
+ //            BUGS/TODO
  //            $ref = $self->undefined_any($var);
         }
     }
