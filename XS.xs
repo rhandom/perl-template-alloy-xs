@@ -3,7 +3,8 @@
 #include "XSUB.h"
 #include "ppport.h"
 
-#define sv_defined(sv) (sv && (SvIOK(sv) || SvNOK(sv) || SvPOK(sv) || SvROK(sv)))
+//#define sv_defined(sv) (sv && (SvIOK(sv) || SvNOK(sv) || SvPOK(sv) || SvROK(sv)))
+#define sv_defined(sv) (sv && SvOK(sv))
 
 #if 1
 #define debug(self, data) _debug(self, data)
@@ -399,33 +400,21 @@ play_expr (_self, _var, ...)
 
     //warn "play_expr: begin \"$name\"\n" if trace;
     if (SvROK(name)) {
-        SV* tree;
-        switch(SvTYPE(SvRV(name))) {
-        case SVt_IV: // ref to a literal int
-            ref = (SV*)SvRV(name);
-            break;
+        if (SvTYPE(SvRV(name)) != SVt_PVAV)
+            (void)die("Found a non-arrayref during play_expr");
 
-        case SVt_NV: // ref to a literal num
-            ref = (SV*)SvRV(name);
-            break;
-
-        case SVt_PV: // ref to a scalar string
-            ref = (SV*)SvRV(name);
-            break;
-
-        case SVt_PVMG: // also a ref to some strings
-            ref = (SV*)SvRV(name);
-            break;
-
-        case SVt_RV: // ref to a ref
-            tree = (SV*)SvRV(name);
-            svp  = av_fetch((AV*)SvRV(tree), 0, FALSE);
+        // see if the first item is defined - if not - its an operator tree
+        svp = av_fetch((AV*)SvRV(name), 0, FALSE);
+        SvGETMAGIC(*svp);
+        if (! sv_defined(*svp)) {
+            svp  = av_fetch((AV*)SvRV(name), 1, FALSE);
             SvGETMAGIC(*svp);
             // if it is the .. operator then just return the number of elements it created
             if (sv_eq(*svp, sv_2mortal(newSVpv("..", 0)))) {
+                // TODO - allow for non wantarray to not return
                 PUSHMARK(SP);
                 XPUSHs(_self);
-                XPUSHs(tree);
+                XPUSHs(name);
                 PUTBACK;
                 n = call_method("play_operator", G_ARRAY);
                 SPAGAIN;
@@ -434,7 +423,7 @@ play_expr (_self, _var, ...)
             } else {
                 PUSHMARK(SP);
                 XPUSHs(_self);
-                XPUSHs(tree);
+                XPUSHs(name);
                 PUTBACK;
                 n = call_method("play_operator", G_SCALAR);
                 SPAGAIN;
@@ -443,9 +432,8 @@ play_expr (_self, _var, ...)
                 for (j = 1; j < n; j++) POPs;
                 PUTBACK;
             }
-            break;
 
-        default: // a named variable access (ie via $name.foo)
+        } else { // a named variable access (ie via $name.foo)
             PUSHMARK(SP);
             XPUSHs(_self);
             XPUSHs(name); // we could check if name is an array - but we will let the recursive call hit
