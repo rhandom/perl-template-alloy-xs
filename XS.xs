@@ -460,8 +460,8 @@ play_expr (_self, _var, ...)
                 if (svp = hv_fetch(vars, name_c, name_len, FALSE)) {
                     SvGETMAGIC(*svp);
                     ref = *svp;
-                    if (return_ref && i >= var_len && ! SvRV(ref)) {
-                        XPUSHs(newRV_noinc(*svp));
+                    if (return_ref && i >= var_len && ! SvROK(ref)) {
+                        XPUSHs(newRV_inc(ref));
                         XSRETURN(1);
                     }
                 } else {
@@ -501,16 +501,13 @@ play_expr (_self, _var, ...)
             }
             svp = hv_fetch(self, "_vars", 5, FALSE);
             SvGETMAGIC(*svp);
-            SV* _v = *svp;
+
             HV* vars = (HV*)SvRV(*svp);
             if (svp = hv_fetch(vars, name_c, name_len, FALSE)) {
                 SvGETMAGIC(*svp);
                 ref = *svp;
                 if (return_ref && i >= var_len && ! SvROK(ref)) {
-                    SV* ret = newRV_inc(ref);
-                    //hv_store((HV*)SvRV(_v), "foo", 3, ret, 0);
-                    //debug(_self, _v);
-                    XPUSHs(ret);
+                    XPUSHs(newRV_inc(ref));
                     XSRETURN(1);
                 }
             } else {
@@ -535,7 +532,7 @@ play_expr (_self, _var, ...)
         // check at each point if the rurned thing was a code
         if (SvROK(ref) && SvTYPE(SvRV(ref)) == SVt_PVCV) {
             if (return_ref && i >= var_len) {
-                XPUSHs(ref);
+                XPUSHs(SvREFCNT_inc(ref));
                 XSRETURN(1);
             }
             //debug(_self, _var);
@@ -815,7 +812,7 @@ play_expr (_self, _var, ...)
             // method calls on objects
             if (was_dot_call && sv_isobject(ref)) {
                 if (return_ref && i >= var_len) {
-                    XPUSHs(ref);
+                    XPUSHs(SvREFCNT_inc(ref));
                     XSRETURN(1);
                 }
                 HV* stash = SvSTASH((SV*)SvRV(ref));
@@ -832,13 +829,14 @@ play_expr (_self, _var, ...)
 
             // hash member access
             if (SvTYPE(SvRV(ref)) == SVt_PVHV) {
+                HV* ref_hv = (HV*)SvRV(ref);
                 if (was_dot_call
-                    && hv_exists((HV*)SvRV(ref), name_c, name_len)
-                    && (svp = hv_fetch((HV*)SvRV(ref), name_c, name_len, FALSE))) {
+                    && hv_exists(ref_hv, name_c, name_len)
+                    && (svp = hv_fetch(ref_hv, name_c, name_len, FALSE))) {
                     SvGETMAGIC(*svp);
                     ref = (SV*)(*svp);
-                    if (return_ref && i >= var_len && ! SvRV(ref)) {
-                        XPUSHs(newRV_noinc((SV*)ref));
+                    if (return_ref && i >= var_len && ! SvROK(ref)) {
+                        XPUSHs(newRV_inc(ref));
                         XSRETURN(1);
                     }
                 } else {
@@ -852,6 +850,16 @@ play_expr (_self, _var, ...)
                         XPUSHs(_var);
                         XSRETURN(1);
                     } else {
+                        if (return_ref && i >= var_len) {
+                            hv_store(ref_hv, name_c, name_len, sv_newmortal(), 0);
+
+                            svp = hv_fetch(ref_hv, name_c, name_len, FALSE);
+                            SvGETMAGIC(*svp);
+                            ref = (SV*)(*svp);
+
+                            XPUSHs(newRV_inc(ref));
+                            XSRETURN(1);
+                        }
                         ref = &PL_sv_undef;
                     }
                 }
@@ -862,14 +870,27 @@ play_expr (_self, _var, ...)
                 int res;
                 if ((res = grok_number(name_c, name_len, &name_uv))
                     && res & IS_NUMBER_IN_UV) { // $name =~ m{ ^ -? $QR_NUM $ }ox) {
-                    if (svp = av_fetch((AV*)SvRV(ref), (int)SvNV(name), FALSE)) {
+                    AV* ref_av = (AV*)SvRV(ref);
+                    I32 index  = (int)SvNV(name);
+                    if (svp = av_fetch(ref_av, index, FALSE)) {
                         SvGETMAGIC(*svp);
                         ref = (SV*)(*svp);
-                        if (return_ref && i >= var_len && ! SvRV(ref)) {
-                            XPUSHs(newRV_noinc((SV*)ref));
+                        if (return_ref && i >= var_len && ! SvROK(ref)) {
+                            XPUSHs(newRV_inc(ref));
                             XSRETURN(1);
                         }
                     } else {
+                        if (return_ref && i >= var_len) {
+                            if (av_len(ref_av) < index) av_extend(ref_av, index);
+                            av_store(ref_av, index, sv_newmortal());
+
+                            svp = av_fetch(ref_av, index, FALSE);
+                            SvGETMAGIC(*svp);
+                            ref = (SV*)(*svp);
+
+                            XPUSHs(newRV_inc(ref));
+                            XSRETURN(1);
+                        }
                         ref = &PL_sv_undef;
                     }
                 } else {
@@ -1052,6 +1073,7 @@ set_variable (_self, _var, val, ...)
     I32 i    = 0;
     I32 n;
     SV** svp;
+    I32 var_len = av_len(var);
 
     // determine the top level of this particular variable access
 
@@ -1105,20 +1127,26 @@ set_variable (_self, _var, val, ...)
         SvGETMAGIC(*svp);
         ref = *svp;
 
-        if (av_len(var) <= i) {
+        HV* ref_hv = (HV*)SvRV(ref);
+        if (svp = hv_fetch(ref_hv, name_c, name_len, FALSE))
+            SvGETMAGIC(*svp);
+
+        if (i > var_len) {
             SV* newval = newSVsv(val);
-            hv_store((HV*)SvRV(ref), name_c, name_len, newval, 0);
+
+            if (svp) SvSetSV_nosteal(*svp, newval);
+            else     hv_store(ref_hv, name_c, name_len, newval, 0);
+
             XPUSHs(val);
             XSRETURN(1);
         }
 
-        svp = hv_fetch((HV*)SvRV(ref), name_c, name_len, FALSE);
         if (! svp || ! SvROK(*svp)) {
             HV* newlevel = newHV();
-            hv_store((HV*)SvRV(ref), name_c, name_len, newRV_noinc((SV*)newlevel), 0);
-            svp = hv_fetch((HV*)SvRV(ref), name_c, name_len, FALSE);
+            hv_store(ref_hv, name_c, name_len, newRV_noinc((SV*)newlevel), 0);
+            svp = hv_fetch(ref_hv, name_c, name_len, FALSE);
+            SvGETMAGIC(*svp);
         }
-        SvGETMAGIC(*svp);
         ref = *svp;
 
     } else if (sv_defined(name)) {
@@ -1132,20 +1160,26 @@ set_variable (_self, _var, val, ...)
         SvGETMAGIC(*svp);
         ref = *svp;
 
-        if (av_len(var) <= i) {
+        HV* ref_hv = (HV*)SvRV(ref);
+        if (svp = hv_fetch(ref_hv, name_c, name_len, FALSE))
+            SvGETMAGIC(*svp);
+
+        if (i > var_len) {
             SV* newval = newSVsv(val);
-            hv_store((HV*)SvRV(ref), name_c, name_len, newval, 0);
+
+            if (svp) SvSetSV_nosteal(*svp, newval);
+            else     hv_store(ref_hv, name_c, name_len, newval, 0);
+
             XPUSHs(newval);
             XSRETURN(1);
         }
 
-        svp = hv_fetch((HV*)SvRV(ref), name_c, name_len, FALSE);
         if (! svp || ! SvROK(*svp)) {
             HV* newlevel = newHV();
-            hv_store((HV*)SvRV(ref), name_c, name_len, newRV_noinc((SV*)newlevel), 0);
-            svp = hv_fetch((HV*)SvRV(ref), name_c, name_len, FALSE);
+            hv_store(ref_hv, name_c, name_len, newRV_noinc((SV*)newlevel), 0);
+            svp = hv_fetch(ref_hv, name_c, name_len, FALSE);
+            SvGETMAGIC(*svp);
         }
-        SvGETMAGIC(*svp);
         ref = *svp;
 
     }
@@ -1162,7 +1196,7 @@ set_variable (_self, _var, val, ...)
         }
 
         // descend one chained level
-        if (i >= av_len(var)) break;
+        if (i >= var_len) break;
 
         bool was_dot_call = 0;
         svp = hv_fetch(Args, "no_dots", 7, FALSE);
@@ -1234,7 +1268,7 @@ set_variable (_self, _var, val, ...)
                 croak("Can't locate object method \"%s\" via package \"%s\"", name_c, package);
             } else {
                 bool lvalueish = FALSE;
-                if (i >= av_len(var)) {
+                if (i >= var_len) {
                     lvalueish = TRUE;
                     AV* newargs = newAV();
                     I32 j;
@@ -1257,20 +1291,27 @@ set_variable (_self, _var, val, ...)
 
         // hash member access
         if (SvTYPE(SvRV(ref)) == SVt_PVHV) {
-            if (av_len(var) <= i) {
+
+            HV* ref_hv = (HV*)SvRV(ref);
+            if (svp = hv_fetch(ref_hv, name_c, name_len, FALSE))
+                SvGETMAGIC(*svp);
+
+            if (i > var_len) {
                 SV* newval = newSVsv(val);
-                hv_store((HV*)SvRV(ref), name_c, name_len, newval, 0);
+
+                if (svp) SvSetSV_nosteal(*svp, newval);
+                else     hv_store(ref_hv, name_c, name_len, newval, 0);
+
                 XPUSHs(val);
                 XSRETURN(1);
             }
 
-            svp = hv_fetch((HV*)SvRV(ref), name_c, name_len, FALSE);
             if (! svp || ! SvROK(*svp)) {
                 HV* newlevel = newHV();
-                hv_store((HV*)SvRV(ref), name_c, name_len, newRV_noinc((SV*)newlevel), 0);
-                svp = hv_fetch((HV*)SvRV(ref), name_c, name_len, FALSE);
+                hv_store(ref_hv, name_c, name_len, newRV_noinc((SV*)newlevel), 0);
+                svp = hv_fetch(ref_hv, name_c, name_len, FALSE);
+                SvGETMAGIC(*svp);
             }
-            SvGETMAGIC(*svp);
             ref = *svp;
             continue;
 
@@ -1281,20 +1322,26 @@ set_variable (_self, _var, val, ...)
             if ((res = grok_number(name_c, name_len, &name_uv))
                 && res & IS_NUMBER_IN_UV) { // $name =~ m{ ^ -? $QR_NUM $ }ox) {
 
-                if (av_len(var) <= i) {
+                AV* ref_av = (AV*)SvRV(ref);
+                if (svp = av_fetch(ref_av, (int)SvNV(name), FALSE))
+                    SvGETMAGIC(*svp);
+
+                if (i > var_len) {
                     SV* newval = newSVsv(val);
-                    av_store((AV*)SvRV(ref), (int)SvNV(name), newval);
+
+                    if (svp) SvSetSV_nosteal(*svp, newval);
+                    else     av_store(ref_av, (int)SvNV(name), newval);
+
                     XPUSHs(val);
                     XSRETURN(1);
                 }
 
-                svp = av_fetch((AV*)SvRV(ref), (int)SvNV(name), FALSE);
                 if (! svp || ! SvROK(*svp)) {
                     HV* newlevel = newHV();
-                    av_store((AV*)SvRV(ref), (int)SvNV(name), newRV_noinc((SV*)newlevel));
-                    svp = av_fetch((AV*)SvRV(ref), (int)SvNV(name), FALSE);
+                    av_store(ref_av, (int)SvNV(name), newRV_noinc((SV*)newlevel));
+                    svp = av_fetch(ref_av, (int)SvNV(name), FALSE);
+                    SvGETMAGIC(*svp);
                 }
-                SvGETMAGIC(*svp);
                 ref = *svp;
                 continue;
 
