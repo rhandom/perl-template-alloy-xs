@@ -385,6 +385,10 @@ play_expr (_self, _var, ...)
     I32 n;
     SV** svp;
 
+    svp = hv_fetch(Args, "return_ref", 10, FALSE);
+    bool return_ref = (svp && SvTRUE(*svp));
+    I32 var_len     = av_len(var);
+
     // determine the top level of this particular variable access
 
     SV* ref;
@@ -456,6 +460,10 @@ play_expr (_self, _var, ...)
                 if (svp = hv_fetch(vars, name_c, name_len, FALSE)) {
                     SvGETMAGIC(*svp);
                     ref = *svp;
+                    if (return_ref && i >= var_len && ! SvRV(ref)) {
+                        XPUSHs(newRV_noinc(*svp));
+                        XSRETURN(1);
+                    }
                 } else {
                     SV* table = get_sv("CGI::Ex::Template::VOBJS", FALSE);
                     if (SvROK(table)
@@ -493,10 +501,18 @@ play_expr (_self, _var, ...)
             }
             svp = hv_fetch(self, "_vars", 5, FALSE);
             SvGETMAGIC(*svp);
+            SV* _v = *svp;
             HV* vars = (HV*)SvRV(*svp);
             if (svp = hv_fetch(vars, name_c, name_len, FALSE)) {
                 SvGETMAGIC(*svp);
                 ref = *svp;
+                if (return_ref && i >= var_len && ! SvROK(ref)) {
+                    SV* ret = newRV_inc(ref);
+                    //hv_store((HV*)SvRV(_v), "foo", 3, ret, 0);
+                    //debug(_self, _v);
+                    XPUSHs(ret);
+                    XSRETURN(1);
+                }
             } else {
                 SV* table = get_sv("CGI::Ex::Template::VOBJS", FALSE);
                 if (SvROK(table)
@@ -518,13 +534,17 @@ play_expr (_self, _var, ...)
 
         // check at each point if the rurned thing was a code
         if (SvROK(ref) && SvTYPE(SvRV(ref)) == SVt_PVCV) {
+            if (return_ref && i >= var_len) {
+                XPUSHs(ref);
+                XSRETURN(1);
+            }
             //debug(_self, _var);
             ref = call_sv_with_args(ref, _self, args, G_ARRAY, Nullsv);
             if (! sv_defined(ref)) break;
         }
 
         // descend one chained level
-        if (i >= av_len(var)) break;
+        if (i >= var_len) break;
 
         bool was_dot_call = 0;
         svp = hv_fetch(Args, "no_dots", 7, FALSE);
@@ -768,6 +788,7 @@ play_expr (_self, _var, ...)
                                 av_push(newvar, svp ? *svp : &PL_sv_undef);
                             }
                             var = newvar;
+                            var_len = av_len(var);
                             i   = 2;
                         }
                         svp = av_fetch(var, i - 5, FALSE);
@@ -793,6 +814,10 @@ play_expr (_self, _var, ...)
 
             // method calls on objects
             if (was_dot_call && sv_isobject(ref)) {
+                if (return_ref && i >= var_len) {
+                    XPUSHs(ref);
+                    XSRETURN(1);
+                }
                 HV* stash = SvSTASH((SV*)SvRV(ref));
                 GV* gv = gv_fetchmethod_autoload(stash, name_c, 1);
                 if (! gv) {
@@ -812,6 +837,10 @@ play_expr (_self, _var, ...)
                     && (svp = hv_fetch((HV*)SvRV(ref), name_c, name_len, FALSE))) {
                     SvGETMAGIC(*svp);
                     ref = (SV*)(*svp);
+                    if (return_ref && i >= var_len && ! SvRV(ref)) {
+                        XPUSHs(newRV_noinc((SV*)ref));
+                        XSRETURN(1);
+                    }
                 } else {
                     SV* table = get_sv("CGI::Ex::Template::HASH_OPS", TRUE);
                     if (SvROK(table)
@@ -836,6 +865,10 @@ play_expr (_self, _var, ...)
                     if (svp = av_fetch((AV*)SvRV(ref), (int)SvNV(name), FALSE)) {
                         SvGETMAGIC(*svp);
                         ref = (SV*)(*svp);
+                        if (return_ref && i >= var_len && ! SvRV(ref)) {
+                            XPUSHs(newRV_noinc((SV*)ref));
+                            XSRETURN(1);
+                        }
                     } else {
                         ref = &PL_sv_undef;
                     }
@@ -1034,50 +1067,60 @@ set_variable (_self, _var, val, ...)
     AV* args = (SvROK(*svp) && SvTYPE(SvRV(*svp)) == SVt_PVAV) ? (AV*)SvRV(*svp) : (AV*)sv_2mortal((SV*)newAV());
 
     if (SvROK(name)) {
-        if (SvTYPE(SvRV(name)) == SVt_PVAV) { // named access (ie via $name.foo)
-            PUSHMARK(SP);
-            XPUSHs(_self);
-            XPUSHs(name); // we could check if name is an array - but we will let the recursive call hit
-            PUTBACK;
-            n = call_method("play_expr", G_SCALAR);
-            SPAGAIN;
-            name = POPs;
-            name_c = SvPV(name, name_len);
-            I32 j;
-            for (j = 1; j < n; j++) POPs;
-            PUTBACK;
-
-            if (! sv_defined(name)         // no defined
-                || name_is_private(name_c) // don't allow vars that begin with _
-                || ! (svp = hv_fetch(self, "_vars", 5, FALSE)) // no entry
-                ) {
-                XPUSHs(&PL_sv_undef);
-                XSRETURN(1);
-            }
-
-            SvGETMAGIC(*svp);
-            ref = *svp;
-
-            if (av_len(var) <= i) {
-                SV* newval = newSVsv(val);
-                hv_store((HV*)SvRV(ref), name_c, name_len, newval, 0);
-                XPUSHs(val);
-                XSRETURN(1);
-            }
-
-            svp = hv_fetch((HV*)SvRV(ref), name_c, name_len, FALSE);
-            if (! svp || ! SvROK(*svp)) {
-                HV* newlevel = newHV();
-                hv_store((HV*)SvRV(ref), name_c, name_len, newRV_noinc((SV*)newlevel), 0);
-                svp = hv_fetch((HV*)SvRV(ref), name_c, name_len, FALSE);
-            }
-            SvGETMAGIC(*svp);
-            ref = *svp;
-
-        } else { // all other types can't be set
+        // non-named types can't be set
+        if (SvTYPE(SvRV(name)) != SVt_PVAV) {
             XPUSHs(&PL_sv_undef);
             XSRETURN(1);
         }
+
+        // operators can't be set either
+        svp = av_fetch((AV*)SvRV(name), 0, FALSE);
+        SvGETMAGIC(*svp);
+        if (! sv_defined(*svp)) {
+            XPUSHs(&PL_sv_undef);
+            XSRETURN(1);
+        }
+
+        // named access (ie via $name.foo)
+        PUSHMARK(SP);
+        XPUSHs(_self);
+        XPUSHs(name); // we could check if name is an array - but we will let the recursive call hit
+        PUTBACK;
+        n = call_method("play_expr", G_SCALAR);
+        SPAGAIN;
+        name = POPs;
+        name_c = SvPV(name, name_len);
+        I32 j;
+        for (j = 1; j < n; j++) POPs;
+        PUTBACK;
+
+        if (! sv_defined(name)         // no defined
+            || name_is_private(name_c) // don't allow vars that begin with _
+            || ! (svp = hv_fetch(self, "_vars", 5, FALSE)) // no entry
+            ) {
+            XPUSHs(&PL_sv_undef);
+            XSRETURN(1);
+        }
+
+        SvGETMAGIC(*svp);
+        ref = *svp;
+
+        if (av_len(var) <= i) {
+            SV* newval = newSVsv(val);
+            hv_store((HV*)SvRV(ref), name_c, name_len, newval, 0);
+            XPUSHs(val);
+            XSRETURN(1);
+        }
+
+        svp = hv_fetch((HV*)SvRV(ref), name_c, name_len, FALSE);
+        if (! svp || ! SvROK(*svp)) {
+            HV* newlevel = newHV();
+            hv_store((HV*)SvRV(ref), name_c, name_len, newRV_noinc((SV*)newlevel), 0);
+            svp = hv_fetch((HV*)SvRV(ref), name_c, name_len, FALSE);
+        }
+        SvGETMAGIC(*svp);
+        ref = *svp;
+
     } else if (sv_defined(name)) {
         if (name_is_private(name_c) // don't allow vars that begin with _
             || ! (svp = hv_fetch(self, "_vars", 5, FALSE)) // no entry
