@@ -168,9 +168,6 @@ my $tests = {                                                             #     
     '46_complex'   => "$longer_template",                                 #  138%  #  346%  #  218%  #  305%  # 1866.3/s #
     '47_hello2000' => "$hello2000",                                       #  111%  #  270%  #  160%  #  260%  # 429.5/s #
     # overall                                                             #  167%  #  442%  #  311%  #  380%  #
-    # With Stash::XS
-    #'46_complex'   => "$longer_template",                                #   -4%  #  274%  #   93%  #  228%  # 1201.9/s #
-    ## overall                                                            #   30%  #  377%  #  211%  #  317%  #
 };
 
 ### load the code representation

@@ -1,11 +1,13 @@
 Changes
+const-c.inc
+const-xs.inc
 fallback/const-c.inc
 fallback/const-xs.inc
 lib/CGI/Ex/Template/XS.pm
 Makefile.PL
-MANIFEST
+MANIFEST			This list of files
 ppport.h
-README
+samples/bench_template.pl
 t/0_template.t
 t/7_template_00_base.t
 t/7_template_01_includes.t
