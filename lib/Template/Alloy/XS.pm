@@ -9,10 +9,11 @@ CGI::Ex::Template::XS - XS version of key parts of CGI::Ex::Template
 use strict;
 use warnings;
 use XSLoader;
-use CGI::Ex::Template 2.10;
+use v5.8.0;
+use CGI::Ex::Template 2.11;
 use base qw(CGI::Ex::Template);
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 XSLoader::load('CGI::Ex::Template::XS', $VERSION);
 
 ### method used for debugging XS
