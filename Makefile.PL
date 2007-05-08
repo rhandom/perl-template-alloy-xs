@@ -6,11 +6,11 @@ WriteMakefile(
     NAME              => 'CGI::Ex::Template::XS',
     VERSION_FROM      => 'lib/CGI/Ex/Template/XS.pm', # finds $VERSION
     PREREQ_PM         => {
-        'CGI::Ex' => '2.06',
+        'CGI::Ex' => '2.11',
     }, # e.g., Module::Name => 1.1
     ($] >= 5.005 ?     ## Add these new keywords supported since 5.005
       (ABSTRACT_FROM  => 'lib/CGI/Ex/Template/XS.pm', # retrieve abstract from module
-       AUTHOR         => 'Paul Seamons <paul@>') : ()),
+       AUTHOR         => 'Paul Seamons <paul@seamons.com>') : ()),
     LIBS              => [''], # e.g., '-lm'
     DEFINE            => '', # e.g., '-DHAVE_SOMETHING'
     INC               => '-I.', # e.g., '-I. -I/usr/include/other'
