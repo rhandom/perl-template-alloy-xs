@@ -1,2 +1,9 @@
 README
 tgz
+Makefile
+XS.bs
+XS.c
+*.inc
+pm_to_blib
+blib
+
