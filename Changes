@@ -1,5 +1,8 @@
 Revision history for Perl extension CGI::Ex::Template::XS.
 
+0.01  May 08 2007
+        - Updates to keep internals in sync with CGI::Ex::Template 2.11
+
 0.01  Apr 27 2007
         - Initial release on CPAN - in sync with CGI::Ex::Template 2.10
 
