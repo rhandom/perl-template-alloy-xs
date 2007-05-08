@@ -510,6 +510,14 @@ play_expr (_self, _var, ...)
                     XPUSHs(newRV_inc(ref));
                     XSRETURN(1);
                 }
+            } else if (sv_eq(name, sv_2mortal(newSVpv("template", 0)))
+                       && (svp = hv_fetch(self, "_template", 9, FALSE))) {
+                SvGETMAGIC(*svp);
+                ref = *svp;
+            } else if (sv_eq(name, sv_2mortal(newSVpv("component", 0)))
+                       && (svp = hv_fetch(self, "_component", 10, FALSE))) {
+                SvGETMAGIC(*svp);
+                ref = *svp;
             } else {
                 SV* table = get_sv("CGI::Ex::Template::VOBJS", FALSE);
                 if (SvROK(table)
