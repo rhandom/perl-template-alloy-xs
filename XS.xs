@@ -510,33 +510,36 @@ play_expr (_self, _var, ...)
                     XPUSHs(newRV_inc(ref));
                     XSRETURN(1);
                 }
-            } else if (sv_eq(name, sv_2mortal(newSVpv("template", 0)))
-                       && (svp = hv_fetch(self, "_template", 9, FALSE))) {
-                SvGETMAGIC(*svp);
-                ref = *svp;
-            } else if (sv_eq(name, sv_2mortal(newSVpv("component", 0)))
-                       && (svp = hv_fetch(self, "_component", 10, FALSE))) {
-                SvGETMAGIC(*svp);
-                ref = *svp;
-            } else {
-                SV* table = get_sv("CGI::Ex::Template::VOBJS", FALSE);
-                if (SvROK(table)
-                    && SvTYPE(SvRV(table)) == SVt_PVHV
-                    && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))
-                    && SvTRUE(*svp)) {
+            }
+            if (! svp || ! sv_defined(ref)) {
+                if (sv_eq(name, sv_2mortal(newSVpv("template", 0)))
+                           && (svp = hv_fetch(self, "_template", 9, FALSE))) {
+                    SvGETMAGIC(*svp);
+                    ref = *svp;
+                } else if (sv_eq(name, sv_2mortal(newSVpv("component", 0)))
+                           && (svp = hv_fetch(self, "_component", 10, FALSE))) {
                     SvGETMAGIC(*svp);
                     ref = *svp;
                 } else {
-                    svp = hv_fetch(self, "VMETHOD_FUNCTIONS", 17, FALSE);
-                    if (svp) SvGETMAGIC(*svp);
-                    SV* table = get_sv("CGI::Ex::Template::SCALAR_OPS", TRUE);
-                    if ((! sv_defined(*svp) || SvTRUE(*svp))
-                        && SvROK(table)
-                        && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
+                    SV* table = get_sv("CGI::Ex::Template::VOBJS", FALSE);
+                    if (SvROK(table)
+                        && SvTYPE(SvRV(table)) == SVt_PVHV
+                        && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))
+                        && SvTRUE(*svp)) {
                         SvGETMAGIC(*svp);
                         ref = *svp;
                     } else {
-                        ref = &PL_sv_undef;
+                        svp = hv_fetch(self, "VMETHOD_FUNCTIONS", 17, FALSE);
+                        if (svp) SvGETMAGIC(*svp);
+                        SV* table = get_sv("CGI::Ex::Template::SCALAR_OPS", TRUE);
+                        if ((! sv_defined(*svp) || SvTRUE(*svp))
+                            && SvROK(table)
+                            && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
+                            SvGETMAGIC(*svp);
+                            ref = *svp;
+                        } else {
+                            ref = &PL_sv_undef;
+                        }
                     }
                 }
             }
