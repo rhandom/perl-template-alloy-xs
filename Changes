@@ -1,5 +1,9 @@
 Revision history for Perl extension CGI::Ex::Template::XS.
 
+0.03  May 17 2007
+        - Updates to keep internals in sync with CGI::Ex::Template 2.13
+        - Added support for VMETHOD_FUNCTIONS configuration.
+
 0.02  May 08 2007
         - Updates to keep internals in sync with CGI::Ex::Template 2.11
 
