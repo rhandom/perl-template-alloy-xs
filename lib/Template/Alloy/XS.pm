@@ -13,7 +13,7 @@ use v5.8.0;
 use CGI::Ex::Template 2.11;
 use base qw(CGI::Ex::Template);
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 XSLoader::load('CGI::Ex::Template::XS', $VERSION);
 
 ### method used for debugging XS
