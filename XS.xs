@@ -527,7 +527,17 @@ play_expr (_self, _var, ...)
                     SvGETMAGIC(*svp);
                     ref = *svp;
                 } else {
-                    ref = &PL_sv_undef;
+                    svp = hv_fetch(self, "VMETHOD_FUNCTIONS", 17, FALSE);
+                    if (svp) SvGETMAGIC(*svp);
+                    SV* table = get_sv("CGI::Ex::Template::SCALAR_OPS", TRUE);
+                    if ((! sv_defined(*svp) || SvTRUE(*svp))
+                        && SvROK(table)
+                        && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
+                        SvGETMAGIC(*svp);
+                        ref = *svp;
+                    } else {
+                        ref = &PL_sv_undef;
+                    }
                 }
             }
         }
