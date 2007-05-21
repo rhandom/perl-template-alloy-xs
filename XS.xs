@@ -85,7 +85,9 @@ static SV* call_sv_with_args (SV* code, SV* self, AV* args, I32 flags, SV* optio
 }
 
 static bool name_is_private (const char* name) {
-    return (*name == '_' || *name == '.') ? 1 : 0;
+    if (SvTRUE(get_sv("CGI::Ex::Template::QR_PRIVATE", FALSE)))
+        return (*name == '_' || *name == '.') ? 1 : 0; // yuck - hard coded
+    return 0;
 }
 
 static void _play_foreach (SV* self, SV* ref, SV* node, SV* out_ref) {
