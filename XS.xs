@@ -1056,13 +1056,11 @@ execute_tree (_self, _tree, _out_ref)
                 XPUSHs(_node);
                 XPUSHs(_out_ref);
                 PUTBACK;
-                n = call_sv(*svp, G_SCALAR);
+                n = call_sv(*svp, G_VOID);
                 SPAGAIN;
                 if (n >= 1) {
-                    add_str = POPs;
                     I32 j;
-                    for (j = 1; j < n; j++) POPs;
-                    if (sv_defined(add_str)) sv_catsv(out_ref, add_str);
+                    for (j = 0; j < n; j++) POPs;
                 }
                 PUTBACK;
             //}
