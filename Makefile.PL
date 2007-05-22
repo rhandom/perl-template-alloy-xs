@@ -6,7 +6,7 @@ WriteMakefile(
     NAME              => 'CGI::Ex::Template::XS',
     VERSION_FROM      => 'lib/CGI/Ex/Template/XS.pm', # finds $VERSION
     PREREQ_PM         => {
-        'CGI::Ex' => '2.11',
+        'CGI::Ex' => '2.13',
     }, # e.g., Module::Name => 1.1
     ($] >= 5.005 ?     ## Add these new keywords supported since 5.005
       (ABSTRACT_FROM  => 'lib/CGI/Ex/Template/XS.pm', # retrieve abstract from module
