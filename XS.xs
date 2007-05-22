@@ -85,8 +85,8 @@ static SV* call_sv_with_args (SV* code, SV* self, AV* args, I32 flags, SV* optio
 }
 
 static bool name_is_private (const char* name) {
-    if (SvTRUE(get_sv("CGI::Ex::Template::QR_PRIVATE", FALSE)))
-        return (*name == '_' || *name == '.') ? 1 : 0; // yuck - hard coded
+    if ((*name == '_' || *name == '.') // yuck - hard coded
+         && SvTRUE(get_sv("CGI::Ex::Template::QR_PRIVATE", FALSE))) return 1;
     return 0;
 }
 
