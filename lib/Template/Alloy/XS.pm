@@ -10,7 +10,7 @@ use strict;
 use warnings;
 use XSLoader;
 use v5.8.0;
-use CGI::Ex::Template 2.13;
+use CGI::Ex::Template 2.14;
 use base qw(CGI::Ex::Template);
 
 our $VERSION = '0.03';
@@ -22,6 +22,10 @@ sub __dump_any {
     require CGI::Ex::Dump;
     CGI::Ex::Dump::debug($data);
 }
+
+### this is here because I don't know how to call
+### builtins from XS - anybody know how?
+sub __lc { lc $_[0] }
 
 1;
 
@@ -38,7 +42,7 @@ __END__
 
 =head1 DESCRIPTION
 
-This is an attempt to get XS speeds for the CGI::Ex::Template functionality.
+This module allows key portions of the CGI::Ex::Template module to run in XS.
 
 All of the methods of CGI::Ex::Template are available.  All configuration
 parameters, and all output should be the same.  You should be able
