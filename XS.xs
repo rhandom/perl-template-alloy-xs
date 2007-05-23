@@ -397,8 +397,6 @@ play_expr (_self, _var, ...)
     svp = av_fetch(var, i++, FALSE);
     SvGETMAGIC(*svp);
     SV* name = (SV*)(*svp);
-    STRLEN name_len;
-    char* name_c = SvPV(name, name_len);
 
     svp = av_fetch(var, i++, FALSE);
     SvGETMAGIC(*svp);
@@ -446,6 +444,8 @@ play_expr (_self, _var, ...)
             n = call_method("play_expr", G_SCALAR);
             SPAGAIN;
             name = POPs;
+            STRLEN name_len;
+            char* name_c = SvPV(name, name_len);
             name_c = SvPV(name, name_len);
             I32 j;
             for (j = 1; j < n; j++) POPs;
@@ -481,6 +481,25 @@ play_expr (_self, _var, ...)
             }
         }
     } else if (sv_defined(name)) {
+        if (svp = hv_fetch(self, "CASE_SENSITIVE", 14, FALSE)) {
+            SvGETMAGIC(*svp);
+            if (SvTRUE(*svp)) {
+                debug(_self, name);
+                PUSHMARK(SP);
+                XPUSHs(name);
+                PUTBACK;
+                n = call_pv("CGI::Ex::Template::XS::__lc", G_SCALAR); // i would love to call the builtin directly (anybody know how?)
+                SPAGAIN;
+                if (n >= 1) name = POPs;
+                I32 j;
+                for (j = 1; j < n; j++) POPs;
+                PUTBACK;
+                debug(_self, name);
+            }
+        }
+
+        STRLEN name_len;
+        char* name_c = SvPV(name, name_len);
         svp = hv_fetch(Args, "is_namespace_during_compile", 27, FALSE);
         if (svp && SvTRUE(*svp)) {
 
