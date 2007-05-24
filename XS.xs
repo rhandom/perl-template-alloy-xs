@@ -481,7 +481,7 @@ play_expr (_self, _var, ...)
             }
         }
     } else if (sv_defined(name)) {
-        if (svp = hv_fetch(self, "CASE_SENSITIVE", 14, FALSE)) {
+        if (svp = hv_fetch(self, "LOWER_CASE_VARS", 15, FALSE)) {
             SvGETMAGIC(*svp);
             if (SvTRUE(*svp)) {
                 debug(_self, name);
