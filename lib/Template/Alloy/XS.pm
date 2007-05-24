@@ -10,7 +10,7 @@ use strict;
 use warnings;
 use XSLoader;
 use v5.8.0;
-use CGI::Ex::Template 2.13;
+use CGI::Ex::Template 2.14;
 use base qw(CGI::Ex::Template);
 
 our $VERSION = '0.04';
