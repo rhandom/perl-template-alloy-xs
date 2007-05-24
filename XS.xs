@@ -481,86 +481,76 @@ play_expr (_self, _var, ...)
             }
         }
     } else if (sv_defined(name)) {
-        if (svp = hv_fetch(self, "LOWER_CASE_VARS", 15, FALSE)) {
-            SvGETMAGIC(*svp);
-            if (SvTRUE(*svp)) {
-                debug(_self, name);
-                PUSHMARK(SP);
-                XPUSHs(name);
-                PUTBACK;
-                n = call_pv("CGI::Ex::Template::XS::__lc", G_SCALAR); // i would love to call the builtin directly (anybody know how?)
-                SPAGAIN;
-                if (n >= 1) name = POPs;
-                I32 j;
-                for (j = 1; j < n; j++) POPs;
-                PUTBACK;
-                debug(_self, name);
-            }
-        }
 
         STRLEN name_len;
         char* name_c = SvPV(name, name_len);
-        svp = hv_fetch(Args, "is_namespace_during_compile", 27, FALSE);
-        if (svp && SvTRUE(*svp)) {
 
-            if (svp = hv_fetch(self, "NAMESPACE", 9, FALSE)) {
-                SvGETMAGIC(*svp);
-                HV* vars = (HV*)SvRV(*svp);
-                if (svp = hv_fetch(vars, name_c, name_len, FALSE)) {
-                    SvGETMAGIC(*svp);
-                    ref = (SV*)(*svp);
-                } else {
-                    ref = &PL_sv_undef;
-                }
-            } else {
-                ref = &PL_sv_undef;
-            }
-        } else {
-            if (name_is_private(name_c)) { // don't allow vars that begin with _
-                XPUSHs(&PL_sv_undef);
+        if (name_is_private(name_c)) { // don't allow vars that begin with _
+            XPUSHs(&PL_sv_undef);
+            XSRETURN(1);
+        }
+        svp = hv_fetch(self, "_vars", 5, FALSE);
+        SvGETMAGIC(*svp);
+
+        HV* vars = (HV*)SvRV(*svp);
+        if (svp = hv_fetch(vars, name_c, name_len, FALSE)) {
+            SvGETMAGIC(*svp);
+            ref = *svp;
+            if (return_ref && i >= var_len && ! SvROK(ref)) {
+                XPUSHs(newRV_inc(ref));
                 XSRETURN(1);
             }
-            svp = hv_fetch(self, "_vars", 5, FALSE);
-            SvGETMAGIC(*svp);
-
-            HV* vars = (HV*)SvRV(*svp);
-            if (svp = hv_fetch(vars, name_c, name_len, FALSE)) {
+        }
+        if (! svp || ! sv_defined(ref)) {
+            if (sv_eq(name, sv_2mortal(newSVpv("template", 0)))
+                       && (svp = hv_fetch(self, "_template", 9, FALSE))) {
                 SvGETMAGIC(*svp);
                 ref = *svp;
-                if (return_ref && i >= var_len && ! SvROK(ref)) {
-                    XPUSHs(newRV_inc(ref));
-                    XSRETURN(1);
-                }
-            }
-            if (! svp || ! sv_defined(ref)) {
-                if (sv_eq(name, sv_2mortal(newSVpv("template", 0)))
-                           && (svp = hv_fetch(self, "_template", 9, FALSE))) {
-                    SvGETMAGIC(*svp);
-                    ref = *svp;
-                } else if (sv_eq(name, sv_2mortal(newSVpv("component", 0)))
-                           && (svp = hv_fetch(self, "_component", 10, FALSE))) {
+            } else if (sv_eq(name, sv_2mortal(newSVpv("component", 0)))
+                       && (svp = hv_fetch(self, "_component", 10, FALSE))) {
+                SvGETMAGIC(*svp);
+                ref = *svp;
+            } else {
+                SV* table = get_sv("CGI::Ex::Template::VOBJS", FALSE);
+                if (SvROK(table)
+                    && SvTYPE(SvRV(table)) == SVt_PVHV
+                    && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))
+                    && SvTRUE(*svp)) {
                     SvGETMAGIC(*svp);
                     ref = *svp;
                 } else {
-                    SV* table = get_sv("CGI::Ex::Template::VOBJS", FALSE);
-                    if (SvROK(table)
-                        && SvTYPE(SvRV(table)) == SVt_PVHV
-                        && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))
-                        && SvTRUE(*svp)) {
+                    svp = hv_fetch(self, "VMETHOD_FUNCTIONS", 17, FALSE);
+                    if (svp) SvGETMAGIC(*svp);
+                    SV* table = get_sv("CGI::Ex::Template::SCALAR_OPS", TRUE);
+                    if ((! sv_defined(*svp) || SvTRUE(*svp))
+                        && SvROK(table)
+                        && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
                         SvGETMAGIC(*svp);
                         ref = *svp;
                     } else {
-                        svp = hv_fetch(self, "VMETHOD_FUNCTIONS", 17, FALSE);
-                        if (svp) SvGETMAGIC(*svp);
-                        SV* table = get_sv("CGI::Ex::Template::SCALAR_OPS", TRUE);
-                        if ((! sv_defined(*svp) || SvTRUE(*svp))
-                            && SvROK(table)
-                            && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
-                            SvGETMAGIC(*svp);
-                            ref = *svp;
-                        } else {
-                            ref = &PL_sv_undef;
-                        }
+                        ref = &PL_sv_undef;
+                    }
+                }
+            }
+
+            if (! sv_defined(ref)
+                && (svp = hv_fetch(self, "LOWER_CASE_VAR_FALLBACK", 23, FALSE))) {
+                SvGETMAGIC(*svp);
+                if (SvTRUE(*svp)) {
+                    PUSHMARK(SP);
+                    XPUSHs(name);
+                    PUTBACK;
+                    n = call_pv("CGI::Ex::Template::XS::__lc", G_SCALAR); // i would love to call the builtin directly (anybody know how?)
+                    SPAGAIN;
+                    if (n >= 1) name = POPs;
+                    I32 j;
+                    for (j = 1; j < n; j++) POPs;
+                    PUTBACK;
+
+                    name_c = SvPV(name, name_len);
+                    if (svp = hv_fetch(vars, name_c, name_len, FALSE)) {
+                        SvGETMAGIC(*svp);
+                        ref = *svp;
                     }
                 }
             }
