@@ -2,13 +2,13 @@
 
 =head1 NAME
 
-7_template_01_includes.t - Test the file include functionality of CGI::Ex::Template - including some edge cases
+7_template_01_includes.t - Test the file include functionality of Template::Alloy - including some edge cases
 
 =cut
 
 use vars qw($module $is_tt $compile_perl);
 BEGIN {
-    $module = 'CGI::Ex::Template';
+    $module = 'Template::Alloy';
     if (grep {/tt/i} @ARGV) {
         $module = 'Template';
     }
