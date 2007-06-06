@@ -16,7 +16,7 @@ BEGIN {
 };
 
 use strict;
-use Test::More tests => ! $is_tt ? 1849 : 625;
+use Test::More tests => ! $is_tt ? 1851 : 625;
 use Data::Dumper qw(Dumper);
 use constant test_taint => 0 && eval { require Taint::Runtime };
 
@@ -1354,8 +1354,9 @@ process_ok("<TMPL_VAR EXPR='7 == \"7.0\"'>" => "1", {tt_config => [SYNTAX => 'ht
 process_ok("<TMPL_VAR EXPR='\"a\" == \"b\"'>" => "1", {tt_config => [SYNTAX => 'hte']});
 process_ok("<TMPL_VAR EXPR='sprintf(\"%d %d\", 7, 8)'>d" => "", {tt_config => [SYNTAX => 'ht']});
 
-process_ok("[% \"<TMPL_VAR EXPR='1+2+3'>\"|eval('hte') %] = [% 6 %]" => "6 = 6");
-process_ok("[% \"<TMPL_VAR EXPR='1+2+3'>\"|eval('ht') %] = [% 6 %]" => "");
+process_ok("[% \"<TMPL_VAR EXPR='1+2+3'>\"|eval(syntax => 'hte') %] = [% 6 %]" => "6 = 6");
+process_ok("[% \"<TMPL_VAR EXPR='1+2+3'>\"|eval(syntax => 'ht') %] = [% 6 %]" => "");
+process_ok("[% \"<TMPL_VAR NAME='foo'>\"|eval(syntax => 'ht') %] = [% 12 %]" => "12 = 12", {foo => 12});
 
 }
 
