@@ -16,7 +16,7 @@ BEGIN {
 };
 
 use strict;
-use Test::More tests => ! $is_tt ? 1857 : 625;
+use Test::More tests => ! $is_tt ? 1865 : 625;
 use Data::Dumper qw(Dumper);
 use constant test_taint => 0 && eval { require Taint::Runtime };
 
@@ -1113,8 +1113,12 @@ process_ok('Foo ${ a.B } Bar'       => 'Foo 7 Bar', {a=>{B=>7,b=>{c=>sub{"(@_)"}
 process_ok('Foo $a.b.c("hi") Bar'   => "Foo <hi> Bar",     {a=>{B=>7,b=>{c=>sub{"<@_>"}}}, tt_config => ['INTERPOLATE' => 1]}) if ! $is_tt;
 process_ok('Foo $a.b.c("hi") Bar'   => "Foo <>(\"hi\") Bar", {a=>{B=>7,b=>{c=>sub{"<@_>"}}}, tt_config => ['INTERPOLATE' => 1]}) if $is_tt;
 process_ok('Foo ${a.b.c("hi")} Bar' => "Foo <hi> Bar", {a=>{B=>7,b=>{c=>sub{"<@_>"}}}, tt_config => ['INTERPOLATE' => 1]});
-process_ok('Foo $a Bar $!a Baz $!a Bing $a'     => "Foo 1 Bar  Baz  Bing 4", {a => sub{++$interp_i}, tt_config => ['INTERPOLATE' => 1]}) if ! $is_tt;
-process_ok('Foo $a Bar $!{a} Baz $!{a} Bing $a' => "Foo 5 Bar  Baz  Bing 8", {a => sub{++$interp_i}, tt_config => ['INTERPOLATE' => 1]}) if ! $is_tt;
+process_ok('Foo $a Bar $!a Baz'     => "Foo 7 Bar 7 Baz", {a => 7, tt_config => ['INTERPOLATE' => 1]}) if ! $is_tt;
+process_ok('Foo $a Bar $!{a} Baz'   => "Foo 7 Bar 7 Baz", {a => 7, tt_config => ['INTERPOLATE' => 1]}) if ! $is_tt;
+process_ok('Foo $a Bar $!a Baz'     => "Foo 7 Bar 7 Baz", {a => 7, tt_config => ['INTERPOLATE' => 1, SHOW_UNDEFINED_INTERP => 1]}) if ! $is_tt;
+process_ok('Foo $a Bar $!{a} Baz'   => "Foo 7 Bar 7 Baz", {a => 7, tt_config => ['INTERPOLATE' => 1, SHOW_UNDEFINED_INTERP => 1]}) if ! $is_tt;
+process_ok('Foo $a Bar $!a Baz'     => "Foo \$a Bar  Baz",   {tt_config => ['INTERPOLATE' => 1, SHOW_UNDEFINED_INTERP => 1]}) if ! $is_tt;
+process_ok('Foo ${a} Bar $!{a} Baz' => "Foo \${a} Bar  Baz", {tt_config => ['INTERPOLATE' => 1, SHOW_UNDEFINED_INTERP => 1]}) if ! $is_tt;
 
 ###----------------------------------------------------------------###
 print "### ANYCASE / TRIM ################################## $is_compile_perl\n";
