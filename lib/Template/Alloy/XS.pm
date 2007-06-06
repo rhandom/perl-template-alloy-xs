@@ -13,7 +13,7 @@ use v5.8.0;
 use Template::Alloy 1.001;
 use base qw(Template::Alloy);
 
-our $VERSION = '0.04';
+our $VERSION = '1.001';
 XSLoader::load('Template::Alloy::XS', $VERSION);
 
 ### method used for debugging XS
