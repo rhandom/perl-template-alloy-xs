@@ -724,22 +724,43 @@ play_expr (_self, _var, ...)
                             svp = av_fetch(fa, 1, FALSE);
                             if (svp) SvGETMAGIC(*svp);
                             if (svp && SvTRUE(*svp)) { // it is a "dynamic filter" that will return a sub
+                                I32 j;
                                 PUSHMARK(SP);
                                 XPUSHs(_self);
                                 PUTBACK;
                                 n = call_method("context", G_SCALAR);
                                 SPAGAIN;
                                 SV* context = (n == 1) ? POPs : Nullsv;
-                                if (n > 1) {
-                                  I32 j;
-                                  for (j = 1; j < n; j++) POPs;
-                                }
+                                if (n > 1) for (j = 1; j < n; j++) POPs;
                                 PUTBACK;
+
+                                I32 count = av_len(args);
+                                AV* _args = newAV();
+                                av_extend(_args, count - 1);
+                                for (j = 0; j <= count; j++) {
+                                    svp = av_fetch(args, j, FALSE);
+                                    if (svp) {
+                                      SvGETMAGIC(*svp);
+                                      PUSHMARK(SP);
+                                      XPUSHs(_self);
+                                      XPUSHs(*svp);
+                                      PUTBACK;
+                                      n = call_method("play_expr", G_SCALAR);
+                                      SPAGAIN;
+                                      av_store(_args, j, (SV*)POPs);
+                                      if (n > 1) {
+                                        I32 k;
+                                        for (k = 1; k < n; k++) POPs;
+                                      }
+                                      PUTBACK;
+                                    } else {
+                                      av_store(_args, j, &PL_sv_undef);
+                                    }
+                                }
                                 PUSHMARK(SP);
                                 XPUSHs(context);
-                                I32 j;
-                                for (j = 0; j <= av_len(args); j++) {
-                                    svp = av_fetch(args, j, FALSE);
+                                for (j = 0; j <= av_len(_args); j++) {
+                                    svp = av_fetch(_args, j, FALSE);
                                     if (svp) {
                                         SvGETMAGIC(*svp);
                                         XPUSHs(*svp);
