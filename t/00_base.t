@@ -16,7 +16,7 @@ BEGIN {
 };
 
 use strict;
-use Test::More tests => ! $is_tt ? 1851 : 625;
+use Test::More tests => ! $is_tt ? 1857 : 625;
 use Data::Dumper qw(Dumper);
 use constant test_taint => 0 && eval { require Taint::Runtime };
 
@@ -1293,12 +1293,14 @@ process_ok('[% qw([%  1  +  2  %]).join.eval %]' => '3') if ! $is_tt;
 
 process_ok('[% f = ">[% TRY; f.eval ; CATCH; \'caught\' ; END %]"; f.eval %]' => '>>>>>caught', {tt_config => [MAX_EVAL_RECURSE => 5]}) if ! $is_tt;
 process_ok('[% f = ">[% TRY; f.eval ; CATCH; \'foo\' ; END %]"; f.eval;f.eval %]' => '>>foo>>foo', {tt_config => [MAX_EVAL_RECURSE => 2]}) if ! $is_tt;
+process_ok("[% '#set(\$foo = 12)'|eval(syntax => 'velocity') %]|[% foo %]" => '|12') if ! $is_tt;
 
 ###----------------------------------------------------------------###
 print "### EVALUATE ######################################## $is_compile_perl\n";
 
 process_ok('[% f = ">[% TRY; f.eval ; CATCH; \'caught\' ; END %]"; EVALUATE f %]' => '>>>>>caught', {tt_config => [MAX_EVAL_RECURSE => 5]}) if ! $is_tt;
 process_ok('[% f = ">[% TRY; f.eval ; CATCH; \'foo\' ; END %]"; EVALUATE f; EVALUATE f %]' => '>>foo>>foo', {tt_config => [MAX_EVAL_RECURSE => 2]}) if ! $is_tt;
+process_ok("[% EVALUATE '#set(\$foo = 12)' syntax => 'velocity' %]|[% foo %]" => '|12') if ! $is_tt;
 
 ###----------------------------------------------------------------###
 print "### DUMP ############################################ $is_compile_perl\n";
@@ -1385,6 +1387,7 @@ process_ok("[% CONFIG ANYCASE => 1 %][% \"[% get 1+2+3 %]\" | eval %] = [% get 6
 process_ok("[% \"[% CONFIG ANYCASE => 1 %][% get 1+2+3 %]\" | eval %] = [% get 6 %]" => "",      {tt_config => [SEMICOLONS => 1]}) if ! $is_tt;
 process_ok("[% \"[% CONFIG ANYCASE => 1 %][% get 1+2+3 %]\" | eval %] = [% GET 6 %]" => "6 = 6", {tt_config => [SEMICOLONS => 1]}) if ! $is_tt;
 process_ok("[% CONFIG SYNTAX => 'hte' %][% \"<TMPL_VAR EXPR='1+2+3'>\"|eval %] = [% 6 %]" => "6 = 6");
+process_ok("[% \"[% get 1+2+3 %]\" | eval(ANYCASE => 1) %] = [% GET 6 %]" => "6 = 6",            {tt_config => [SEMICOLONS => 1]}) if ! $is_tt;
 
 process_ok("[% CONFIG DUMP    %]|[% CONFIG DUMP    => 0 %][% DUMP           %]bar" => 'CONFIG DUMP = undef|bar');
 process_ok("[% CONFIG DUMP => {Useqq=>1, header=>0, html=>0} %][% DUMP 'foo' %]" => "'foo' = \"foo\";\n");
