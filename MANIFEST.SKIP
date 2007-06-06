@@ -10,3 +10,6 @@ blib
 \.gz$
 .cvsignore
 tmon\.out
+XS.bs
+XS.c
+XS.o

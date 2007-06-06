@@ -57,6 +57,12 @@ to use this package directly in place of Template::Alloy.
 
 =over 4
 
+=item Add play_variable
+
+With the compile_perl option we added play_variable which is a partially
+resolved variable mapper - more closely associated with Template::Stash's
+get method.  We need to recreate the method here.
+
 =item Memory leak
 
 The use of FILTER aliases causes a memory leak in a cached environment.
