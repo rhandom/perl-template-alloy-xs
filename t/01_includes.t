@@ -2,7 +2,7 @@
 
 =head1 NAME
 
-7_template_01_includes.t - Test the file include functionality of Template::Alloy - including some edge cases
+01_includes.t - Test the file include functionality of Template::Alloy - including some edge cases
 
 =cut
 

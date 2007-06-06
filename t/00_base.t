@@ -2,7 +2,7 @@
 
 =head1 NAME
 
-7_template_00_base.t - Test the basic language functionality of Template::Alloy - including many edge cases
+00_base.t - Test the basic language functionality of Template::Alloy - including many edge cases
 
 =cut
 
