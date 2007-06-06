@@ -19,8 +19,8 @@ XSLoader::load('Template::Alloy::XS', $VERSION);
 ### method used for debugging XS
 sub __dump_any {
     my ($self, $data) = @_;
-    require CGI::Ex::Dump;
-    CGI::Ex::Dump::debug($data);
+    require Data::Dumper;
+    print Data::Dumper::Dumper($data);
 }
 
 ### this is here because I don't know how to call
