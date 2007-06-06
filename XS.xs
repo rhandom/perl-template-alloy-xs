@@ -330,13 +330,13 @@ MODULE = Template::Alloy::XS		PACKAGE = Template::Alloy::XS
 PROTOTYPES: DISABLE
 
 static int
-test_xs (self)
+__test_xs (self)
     SV* self;
   CODE:
     GV *gv;
     if (sv_isobject(self)) {
       HV* obj = SvSTASH((SV*) SvRV(self));
-      if ((gv = gv_fetchmethod_autoload(obj, "foobar", 1))){
+      if ((gv = gv_fetchmethod_autoload(obj, "foobar", 0))){
         PUSHMARK(SP);
         XPUSHs(self);
         PUTBACK;
@@ -974,7 +974,7 @@ play_expr (_self, _var, ...)
 
 
 static int
-play_tree (_self, _tree, _out_ref)
+play_tree_xs (_self, _tree, _out_ref)
     SV* _self;
     SV* _tree;
     SV* _out_ref;
@@ -983,7 +983,7 @@ play_tree (_self, _tree, _out_ref)
         HV* self    = (HV*)SvRV(_self);
         AV* tree    = (AV*)SvRV(_tree);
         SV* out_ref = (SV*)SvRV(_out_ref);
-        SV* _table  = get_sv("Template::Alloy::DIRECTIVES", FALSE);
+        SV* _table  = get_sv("Template::Alloy::Play::DIRECTIVES", FALSE);
         if (! SvROK(_table) || SvTYPE(SvRV(_table)) != SVt_PVHV) (void)die("Missing table");
         HV* table   = (HV*)SvRV(_table);
         I32 len     = av_len(tree) + 1;
@@ -997,7 +997,6 @@ play_tree (_self, _tree, _out_ref)
         STRLEN directive_len;
         char*  directive_c;
         SV*    details;
-        AV*    directive_node;
         SV*    add_str;
 
         for (i = 0; i < len; i++) {
@@ -1046,7 +1045,6 @@ play_tree (_self, _tree, _out_ref)
 
             svp = hv_fetch(table, directive_c, directive_len, FALSE);
             if (! svp) continue;
-            directive_node = (AV*)SvRV(*svp);
 
             // attempt to handle FOREACH natively
             //if (sv_eq(directive, sv_2mortal(newSVpv("FOREACH", 0)))
@@ -1055,9 +1053,6 @@ play_tree (_self, _tree, _out_ref)
             //    _play_foreach(_self, details, _node, _out_ref);
             //
             //} else {
-
-                svp = av_fetch(directive_node, 1, FALSE);
-                if (! svp) continue;
 
                 PUSHMARK(SP);
                 XPUSHs(_self);
