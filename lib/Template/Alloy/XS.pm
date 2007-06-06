@@ -1,8 +1,8 @@
-package CGI::Ex::Template::XS;
+package Template::Alloy::XS;
 
 =head1 NAME
 
-CGI::Ex::Template::XS - XS version of key parts of CGI::Ex::Template
+Template::Alloy::XS - XS version of key parts of Template::Alloy
 
 =cut
 
@@ -10,11 +10,11 @@ use strict;
 use warnings;
 use XSLoader;
 use v5.8.0;
-use CGI::Ex::Template 2.14;
-use base qw(CGI::Ex::Template);
+use Template::Alloy 1.001;
+use base qw(Template::Alloy);
 
 our $VERSION = '0.04';
-XSLoader::load('CGI::Ex::Template::XS', $VERSION);
+XSLoader::load('Template::Alloy::XS', $VERSION);
 
 ### method used for debugging XS
 sub __dump_any {
@@ -34,19 +34,19 @@ __END__
 
 =head1 SYNOPSIS
 
-    use CGI::Ex::Template::XS;
+    use Template::Alloy::XS;
 
-    my $obj = CGI::Ex::Template::XS->new;
+    my $obj = Template::Alloy::XS->new;
 
-    # see the CGI::Ex::Template documentation
+    # see the Template::Alloy documentation
 
 =head1 DESCRIPTION
 
-This module allows key portions of the CGI::Ex::Template module to run in XS.
+This module allows key portions of the Template::Alloy module to run in XS.
 
-All of the methods of CGI::Ex::Template are available.  All configuration
+All of the methods of Template::Alloy are available.  All configuration
 parameters, and all output should be the same.  You should be able
-to use this package directly in place of CGI::Ex::Template.
+to use this package directly in place of Template::Alloy.
 
 =head1 BUGS/TODO
 

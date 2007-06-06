@@ -3,14 +3,14 @@ use ExtUtils::MakeMaker;
 # See lib/ExtUtils/MakeMaker.pm for details of how to influence
 # the contents of the Makefile that is written.
 WriteMakefile(
-    NAME              => 'CGI::Ex::Template::XS',
-    VERSION_FROM      => 'lib/CGI/Ex/Template/XS.pm', # finds $VERSION
+    NAME              => 'Template::Alloy::XS',
+    VERSION_FROM      => 'lib/Template/Alloy/XS.pm', # finds $VERSION
     PREREQ_PM         => {
         'CGI::Ex' => '2.13',
     }, # e.g., Module::Name => 1.1
     ($] >= 5.005 ?     ## Add these new keywords supported since 5.005
-      (ABSTRACT_FROM  => 'lib/CGI/Ex/Template/XS.pm', # retrieve abstract from module
-       AUTHOR         => 'Paul Seamons <paul@seamons.com>') : ()),
+      (ABSTRACT_FROM  => 'lib/Template/Alloy/XS.pm', # retrieve abstract from module
+       AUTHOR         => 'Paul Seamons <perl@seamons.com>') : ()),
     LIBS              => [''], # e.g., '-lm'
     DEFINE            => '', # e.g., '-DHAVE_SOMETHING'
     INC               => '-I.', # e.g., '-I. -I/usr/include/other'
@@ -24,7 +24,7 @@ if  (eval {require ExtUtils::Constant; 1}) {
   # changes.
   my @names = (qw());
   ExtUtils::Constant::WriteConstants(
-                                     NAME         => 'CGI::Ex::Template::XS',
+                                     NAME         => 'Template::Alloy::XS',
                                      NAMES        => \@names,
                                      DEFAULT_TYPE => 'IV',
                                      C_FILE       => 'const-c.inc',
