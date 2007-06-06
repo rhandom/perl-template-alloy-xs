@@ -27,6 +27,11 @@ sub __dump_any {
 ### builtins from XS - anybody know how?
 sub __lc { lc $_[0] }
 
+sub play_tree {
+    require Template::Alloy::Play;
+    shift->play_tree_xs(@_);
+}
+
 1;
 
 __END__
