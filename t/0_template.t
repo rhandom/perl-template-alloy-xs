@@ -16,13 +16,13 @@ sub foobar { my $s = 234; return $s  }
 my $c = Template::Alloy::XS->new({foo => 1});
 ok($c, "Got an object");
 
-my $i = eval { $c->test_xs };
-ok($i, "XS is on the way ($i)");
+my $i = eval { $c->__test_xs };
+ok($i, "XS is on the way ($i) ($@)");
 
 my $f = Foo->new;
 ok($f, "Got subclassed object");
 ok($f->foobar, "Has new method");
-$i = eval { $f->test_xs };
+$i = eval { $f->__test_xs };
 ok($i, "XS is on the way ($i)");
 
 
