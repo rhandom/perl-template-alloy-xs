@@ -8,7 +8,7 @@
 
 use vars qw($module $is_tt $compile_perl);
 BEGIN {
-    $module = 'Template::Alloy';
+    $module = 'Template::Alloy::XS';
     if (grep {/tt/i} @ARGV) {
         $module = 'Template';
     }

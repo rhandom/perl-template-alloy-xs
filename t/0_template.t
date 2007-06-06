@@ -2,18 +2,18 @@
 
 use Test::More tests => 8;
 
-use_ok('CGI::Ex::Template::XS');
+use_ok('Template::Alloy::XS');
 
 {
 package Foo;
-@Foo::ISA = qw(CGI::Ex::Template::XS);
+@Foo::ISA = qw(Template::Alloy::XS);
 
 sub foobar { my $s = 234; return $s  }
 }
 
 
 
-my $c = CGI::Ex::Template::XS->new({foo => 1});
+my $c = Template::Alloy::XS->new({foo => 1});
 ok($c, "Got an object");
 
 my $i = eval { $c->test_xs };
