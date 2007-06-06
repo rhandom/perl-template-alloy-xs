@@ -86,7 +86,7 @@ static SV* call_sv_with_args (SV* code, SV* self, AV* args, I32 flags, SV* optio
 
 static bool name_is_private (const char* name) {
     if ((*name == '_' || *name == '.') // yuck - hard coded
-         && SvTRUE(get_sv("CGI::Ex::Template::QR_PRIVATE", FALSE))) return 1;
+         && SvTRUE(get_sv("Template::Alloy::QR_PRIVATE", FALSE))) return 1;
     return 0;
 }
 
@@ -119,10 +119,10 @@ static void _play_foreach (SV* self, SV* ref, SV* node, SV* out_ref) {
 
     // turn the items into an iterator if it isn't already one
     if (! sv_isobject(items)
-        || (! sv_derived_from(items, "CGI::Ex::Template::Iterator") // hrm - don't really like hard coded names
+        || (! sv_derived_from(items, "Template::Alloy::Iterator") // hrm - don't really like hard coded names
             && ! sv_derived_from(items, "Template::Iterator"))) {
         PUSHMARK(SP);
-        XPUSHs(sv_2mortal(newSVpv("CGI::Ex::Template::Iterator", 0))); // hrm - even worse here
+        XPUSHs(sv_2mortal(newSVpv("Template::Alloy::Iterator", 0))); // hrm - even worse here
         XPUSHs(items);
         PUTBACK;
         n = call_method("new", G_SCALAR);
@@ -179,14 +179,14 @@ static void _play_foreach (SV* self, SV* ref, SV* node, SV* out_ref) {
         XPUSHs(sub_tree);
         XPUSHs(out_ref);
         PUTBACK;
-        n = call_method("execute_tree", G_VOID | G_EVAL);
+        n = call_method("play_tree", G_VOID | G_EVAL);
         SPAGAIN;
         PUTBACK;
 
         SV* errsv = get_sv("@", TRUE);
         if (SvTRUE(errsv)) {
             if (sv_isobject(errsv)
-                && (sv_derived_from(errsv, "CGI::Ex::Template::Exception")
+                && (sv_derived_from(errsv, "Template::Alloy::Exception")
                     || sv_derived_from(errsv, "Template::Exception"))) {
                 PUSHMARK(SP);
                 XPUSHs(errsv);
@@ -245,7 +245,7 @@ static void _play_foreach (SV* self, SV* ref, SV* node, SV* out_ref) {
 //            $self->set_variable($var, $item);
 //
 //            ### execute the sub tree
-//            eval { $self->execute_tree($sub_tree, $out_ref) };
+//            eval { $self->play_tree($sub_tree, $out_ref) };
 //            if (my $err = $@) {
 //                if (UNIVERSAL::isa($err, $PACKAGE_EXCEPTION)) {
 //                    if ($err->type eq 'next') {
@@ -277,7 +277,7 @@ static void _play_foreach (SV* self, SV* ref, SV* node, SV* out_ref) {
 //            }
 //
 //            ### execute the sub tree
-//            eval { $self->execute_tree($sub_tree, $out_ref) };
+//            eval { $self->play_tree($sub_tree, $out_ref) };
 //            if (my $err = $@) {
 //                if (UNIVERSAL::isa($err, $PACKAGE_EXCEPTION)) {
 //                    if ($err->type eq 'next') {
@@ -302,7 +302,7 @@ static void xs_throw (SV* self, const char* exception_type, SV* msg) {
     dSP;
 
     if (sv_isobject(msg)
-        && (sv_derived_from(msg, "CGI::Ex::Template::Exception")
+        && (sv_derived_from(msg, "Template::Alloy::Exception")
             || sv_derived_from(msg, "Template::Exception"))) {
         SV* errsv = get_sv("@", TRUE);
         sv_setsv(errsv, msg);
@@ -325,7 +325,7 @@ static void xs_throw (SV* self, const char* exception_type, SV* msg) {
 
 ///----------------------------------------------------------------///
 
-MODULE = CGI::Ex::Template::XS		PACKAGE = CGI::Ex::Template::XS
+MODULE = Template::Alloy::XS		PACKAGE = Template::Alloy::XS
 
 PROTOTYPES: DISABLE
 
@@ -467,7 +467,7 @@ play_expr (_self, _var, ...)
                         XSRETURN(1);
                     }
                 } else {
-                    SV* table = get_sv("CGI::Ex::Template::VOBJS", FALSE);
+                    SV* table = get_sv("Template::Alloy::VOBJS", FALSE);
                     if (SvROK(table)
                         && SvTYPE(SvRV(table)) == SVt_PVHV
                         && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))
@@ -511,7 +511,7 @@ play_expr (_self, _var, ...)
                 SvGETMAGIC(*svp);
                 ref = *svp;
             } else {
-                SV* table = get_sv("CGI::Ex::Template::VOBJS", FALSE);
+                SV* table = get_sv("Template::Alloy::VOBJS", FALSE);
                 if (SvROK(table)
                     && SvTYPE(SvRV(table)) == SVt_PVHV
                     && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))
@@ -521,7 +521,7 @@ play_expr (_self, _var, ...)
                 } else {
                     svp = hv_fetch(self, "VMETHOD_FUNCTIONS", 17, FALSE);
                     if (svp) SvGETMAGIC(*svp);
-                    SV* table = get_sv("CGI::Ex::Template::SCALAR_OPS", TRUE);
+                    SV* table = get_sv("Template::Alloy::SCALAR_OPS", TRUE);
                     if ((! sv_defined(*svp) || SvTRUE(*svp))
                         && SvROK(table)
                         && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
@@ -540,7 +540,7 @@ play_expr (_self, _var, ...)
                     PUSHMARK(SP);
                     XPUSHs(name);
                     PUTBACK;
-                    n = call_pv("CGI::Ex::Template::XS::__lc", G_SCALAR); // i would love to call the builtin directly (anybody know how?)
+                    n = call_pv("Template::Alloy::XS::__lc", G_SCALAR); // i would love to call the builtin directly (anybody know how?)
                     SPAGAIN;
                     if (n >= 1) name = POPs;
                     I32 j;
@@ -636,13 +636,13 @@ play_expr (_self, _var, ...)
         // allow for scalar and filter access (this happens for every non virtual method call)
         if (! SvROK(ref)) {
             SV* table;
-            if ((table = get_sv("CGI::Ex::Template::SCALAR_OPS", FALSE))
+            if ((table = get_sv("Template::Alloy::SCALAR_OPS", FALSE))
                 && SvROK(table)
                 && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
                 SvGETMAGIC(*svp);
                 ref = call_sv_with_args(*svp, _self, args, G_SCALAR, ref);
 
-            } else if ((table = get_sv("CGI::Ex::Template::LIST_OPS", FALSE)) // auto-promote to list and use list op
+            } else if ((table = get_sv("Template::Alloy::LIST_OPS", FALSE)) // auto-promote to list and use list op
                 && SvROK(table)
                 && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
                 SvGETMAGIC(*svp);
@@ -661,7 +661,7 @@ play_expr (_self, _var, ...)
                     }
                 }
                 if (! sv_defined(filter)
-                    && (table = get_sv("CGI::Ex::Template::FILTER_OPS", FALSE)) // predefined filters in CET
+                    && (table = get_sv("Template::Alloy::FILTER_OPS", FALSE)) // predefined filters in CET
                     && SvROK(table)
                     && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
                     SvGETMAGIC(*svp);
@@ -762,7 +762,7 @@ play_expr (_self, _var, ...)
                                     if (! SvTRUE(coderef) && SvTRUE(err)) xs_throw(_self, "filter", err);
                                     if (! SvROK(coderef) || SvTYPE(SvRV(coderef)) != SVt_PVCV) {
                                         if (sv_isobject(coderef)
-                                            && (sv_derived_from(coderef, "CGI::Ex::Template::Exception")
+                                            && (sv_derived_from(coderef, "Template::Alloy::Exception")
                                                 || sv_derived_from(coderef, "Template::Exception"))) {
                                             xs_throw(_self, "filter", coderef);
                                         }
@@ -872,7 +872,7 @@ play_expr (_self, _var, ...)
                         XSRETURN(1);
                     }
                 } else {
-                    SV* table = get_sv("CGI::Ex::Template::HASH_OPS", TRUE);
+                    SV* table = get_sv("Template::Alloy::HASH_OPS", TRUE);
                     if (SvROK(table)
                         && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
                         SvGETMAGIC(*svp);
@@ -926,7 +926,7 @@ play_expr (_self, _var, ...)
                         ref = &PL_sv_undef;
                     }
                 } else {
-                    SV* table = get_sv("CGI::Ex::Template::LIST_OPS", TRUE);
+                    SV* table = get_sv("Template::Alloy::LIST_OPS", TRUE);
                     if (SvROK(table)
                         && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
                         SvGETMAGIC(*svp);
@@ -974,7 +974,7 @@ play_expr (_self, _var, ...)
 
 
 static int
-execute_tree (_self, _tree, _out_ref)
+play_tree (_self, _tree, _out_ref)
     SV* _self;
     SV* _tree;
     SV* _out_ref;
@@ -983,7 +983,7 @@ execute_tree (_self, _tree, _out_ref)
         HV* self    = (HV*)SvRV(_self);
         AV* tree    = (AV*)SvRV(_tree);
         SV* out_ref = (SV*)SvRV(_out_ref);
-        SV* _table  = get_sv("CGI::Ex::Template::DIRECTIVES", FALSE);
+        SV* _table  = get_sv("Template::Alloy::DIRECTIVES", FALSE);
         if (! SvROK(_table) || SvTYPE(SvRV(_table)) != SVt_PVHV) (void)die("Missing table");
         HV* table   = (HV*)SvRV(_table);
         I32 len     = av_len(tree) + 1;
