@@ -2,13 +2,13 @@
 
 =head1 NAME
 
-7_template_00_base.t - Test the basic language functionality of CGI::Ex::Template - including many edge cases
+7_template_00_base.t - Test the basic language functionality of Template::Alloy - including many edge cases
 
 =cut
 
 use vars qw($module $is_tt $compile_perl);
 BEGIN {
-    $module = 'CGI::Ex::Template';
+    $module = 'Template::Alloy';
     if (grep {/tt/i} @ARGV) {
         $module = 'Template';
     }
@@ -852,9 +852,9 @@ process_ok("[% var = [{key => 'a'}, {key => 'b'}] -%]
 [% END %]" => "  (a)\n  (b)\n") if ! $is_tt;
 
 if (! $is_tt) {
-    local $CGI::Ex::Template::QR_PRIVATE = 0;
-    local $CGI::Ex::Template::QR_PRIVATE = 0; # warn clean
-    CGI::Ex::Template->define_vmethod('scalar', textjoin => sub {join(shift, @_)});
+    local $Template::Alloy::QR_PRIVATE = 0;
+    local $Template::Alloy::QR_PRIVATE = 0; # warn clean
+    Template::Alloy->define_vmethod('scalar', textjoin => sub {join(shift, @_)});
 
     process_ok("[% var = [{key => 'a'}, {key => 'b'}, {key => 'c'}] -%]
 [% LOOP var -%]
@@ -1337,7 +1337,7 @@ print "### SYNTAX ########################################## $is_compile_perl\n"
 if (! $is_tt) {
 process_ok("[%- BLOCK a %]b is [% b %][% END %][% PROCESS a b => 237 | repeat(2) %]" => "", {tt_config => [SYNTAX => 'garbage']});
 process_ok("[%- BLOCK a %]b is [% b %][% END %][% PROCESS a b => 237 | repeat(2) %]" => "b is 237237");
-process_ok("[%- BLOCK a %]b is [% b %][% END %][% PROCESS a b => 237 | repeat(2) %]" => "b is 237237", {tt_config => [SYNTAX => 'cet']});
+process_ok("[%- BLOCK a %]b is [% b %][% END %][% PROCESS a b => 237 | repeat(2) %]" => "b is 237237", {tt_config => [SYNTAX => 'alloy']});
 process_ok("[%- BLOCK a %]b is [% b %][% END %][% PROCESS a b => 237 | repeat(2) %]" => "b is 237237", {tt_config => [SYNTAX => 'tt3']});
 process_ok("[%- BLOCK a %]b is [% b %][% END %][% PROCESS a b => 237 | repeat(2) %]" => "b is 237b is 237", {tt_config => [SYNTAX => 'tt2']});
 process_ok("[%- BLOCK a %]b is [% b %][% END %][% PROCESS a b => 237 | repeat(2) %]" => "b is 237b is 237", {tt_config => [SYNTAX => 'tt1']});
