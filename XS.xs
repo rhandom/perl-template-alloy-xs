@@ -1193,12 +1193,8 @@ play_variable (_self, ...)
         char* name_c = SvPV(name, name_len);
 
         svp = av_fetch(var, i++, FALSE);
-        if (! svp) {
-            ref = &PL_sv_undef;
-            break;
-        }
-        SvGETMAGIC(*svp);
-        args = (SvROK(*svp) && SvTYPE(SvRV(*svp)) == SVt_PVAV) ? (AV*)SvRV(*svp) : (AV*)sv_2mortal((SV*)newAV());
+        if (svp) SvGETMAGIC(*svp);
+        args = (svp && SvROK(*svp) && SvTYPE(SvRV(*svp)) == SVt_PVAV) ? (AV*)SvRV(*svp) : (AV*)sv_2mortal((SV*)newAV());
 
         if (name_is_private(name_c)) { // don't allow vars that begin with _
             ref = &PL_sv_undef;
