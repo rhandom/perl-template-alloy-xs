@@ -13,7 +13,7 @@ use v5.8.0;
 use Template::Alloy 1.002;
 use base qw(Template::Alloy);
 
-our $VERSION = '1.002';
+our $VERSION = '1.003';
 XSLoader::load('Template::Alloy::XS', $VERSION);
 
 ### method used for debugging XS
@@ -28,8 +28,10 @@ sub __dump_any {
 sub __lc { lc $_[0] }
 
 sub play_tree {
+    my $self = shift;
+    return $self->stream_tree(@_) if $self->{'STREAM'};
     require Template::Alloy::Play;
-    shift->play_tree_xs(@_);
+    $self->play_tree_xs(@_);
 }
 
 1;
