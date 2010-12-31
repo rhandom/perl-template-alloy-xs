@@ -1,7 +1,6 @@
 #include "EXTERN.h"
 #include "perl.h"
 #include "XSUB.h"
-#include "ppport.h"
 
 //#define sv_defined(sv) (sv && (SvIOK(sv) || SvNOK(sv) || SvPOK(sv) || SvROK(sv)))
 #define sv_defined(sv) (sv && SvOK(sv))
@@ -435,6 +434,7 @@ play_expr (_self, _var, ...)
     I32 i    = 0;
     I32 n;
     SV** svp;
+    SV** args_svp;
 
     svp = hv_fetch(Args, "return_ref", 10, FALSE);
     bool return_ref = (svp && SvTRUE(*svp));
@@ -447,11 +447,12 @@ play_expr (_self, _var, ...)
     SvGETMAGIC(*svp);
     SV* name = (SV*)(*svp);
 
-    svp = av_fetch(var, i++, FALSE);
-    SvGETMAGIC(*svp);
-    AV* args = (SvROK(*svp) && SvTYPE(SvRV(*svp)) == SVt_PVAV) ? (AV*)SvRV(*svp) : (AV*)sv_2mortal((SV*)newAV());
+    args_svp = av_fetch(var, i++, FALSE);
+    SvGETMAGIC(*args_svp);
+    AV* args = (SvROK(*args_svp) && SvTYPE(SvRV(*args_svp)) == SVt_PVAV) ? (AV*)SvRV(*args_svp) : (AV*)sv_2mortal((SV*)newAV());
 
     //warn "play_expr: begin \"$name\"\n" if trace;
+
     if (SvROK(name)) {
         if (SvTYPE(SvRV(name)) != SVt_PVAV)
             (void)die("Found a non-arrayref during play_expr");
@@ -574,14 +575,22 @@ play_expr (_self, _var, ...)
                 } else {
                     svp = hv_fetch(self, "VMETHOD_FUNCTIONS", 17, FALSE);
                     if (svp) SvGETMAGIC(*svp);
-                    SV* table = get_sv("Template::Alloy::SCALAR_OPS", TRUE);
+                    SV* table = get_sv("Template::Alloy::ITEM_METHODS", TRUE);
                     if ((! sv_defined(*svp) || SvTRUE(*svp))
                         && SvROK(table)
                         && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
                         SvGETMAGIC(*svp);
                         ref = *svp;
                     } else {
-                        ref = &PL_sv_undef;
+                        SV* table = get_sv("Template::Alloy::ITEM_OPS", TRUE);
+                        if ((! sv_defined(*svp) || SvTRUE(*svp))
+                            && SvROK(table)
+                            && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
+                            SvGETMAGIC(*svp);
+                            ref = *svp;
+                        } else {
+                            ref = &PL_sv_undef;
+                        }
                     }
                 }
             }
@@ -611,6 +620,7 @@ play_expr (_self, _var, ...)
     }
 
     HV* seen_filters = (HV *)sv_2mortal((SV *)newHV());
+
 
     while (sv_defined(ref)) {
 
@@ -689,7 +699,14 @@ play_expr (_self, _var, ...)
         // allow for scalar and filter access (this happens for every non virtual method call)
         if (! SvROK(ref)) {
             SV* table;
-            if ((table = get_sv("Template::Alloy::SCALAR_OPS", FALSE))
+            if ((table = get_sv("Template::Alloy::ITEM_METHODS", FALSE))
+                && SvROK(table)
+                && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
+                SvGETMAGIC(*svp);
+                (void)die("ITEM_METHODS calling isn't quite done (need to pass along self)");
+                ref = call_sv_with_args(*svp, _self, args, G_SCALAR, ref);
+
+            } else if ((table = get_sv("Template::Alloy::ITEM_OPS", FALSE))
                 && SvROK(table)
                 && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
                 SvGETMAGIC(*svp);
@@ -699,6 +716,7 @@ play_expr (_self, _var, ...)
                 && SvROK(table)
                 && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
                 SvGETMAGIC(*svp);
+
                 AV* array = newAV();
                 av_push(array, ref);
                 ref = call_sv_with_args(*svp, _self, args, G_SCALAR, newRV_noinc((SV*)array));
@@ -924,7 +942,8 @@ play_expr (_self, _var, ...)
                 HV* stash = SvSTASH((SV*)SvRV(ref));
                 GV* gv = gv_fetchmethod_autoload(stash, name_c, 1);
                 if (! gv) {
-                    char* package = sv_reftype(SvRV(ref), 1);
+                    char* package;
+                    package = (char*)sv_reftype(SvRV(ref), 1);
                     croak("Can't locate object method \"%s\" via package %s", name_c, package);
                 } else {
                     ref = call_sv_with_args((SV*)GvCV(gv), _self, args, G_ARRAY, ref);
@@ -1036,7 +1055,9 @@ play_expr (_self, _var, ...)
             SV* msg = sv_2mortal(newSVpv("", 0));
             sv_catsv(msg, (SV*)chunk);
             sv_catpv(msg, " is undefined\n");
-            (void)die(SvPV_nolen(msg));
+            SV* errsv = get_sv("@", GV_ADD);
+            sv_setsv(errsv, msg);
+            croak(NULL);
         } else {
  //            BUGS/TODO
  //            $ref = $self->undefined_any($var);
@@ -1363,7 +1384,8 @@ set_variable (_self, _var, val, ...)
             HV*  stash = SvSTASH((SV*) SvRV(ref));
             GV*  gv    = gv_fetchmethod_autoload(stash, name_c, 1);
             if (! gv) {
-                char* package = sv_reftype(SvRV(ref), 1);
+                char* package;
+                package = (char*)sv_reftype(SvRV(ref), 1);
                 croak("Can't locate object method \"%s\" via package \"%s\"", name_c, package);
             } else {
                 bool lvalueish = FALSE;
