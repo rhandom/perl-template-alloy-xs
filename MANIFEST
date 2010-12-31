@@ -13,3 +13,4 @@ t/00_base.t
 t/01_includes.t
 t/0_template.t
 XS.xs
+META.yml                                 Module meta-data (added by MakeMaker)
