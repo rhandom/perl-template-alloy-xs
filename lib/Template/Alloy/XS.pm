@@ -10,10 +10,10 @@ use strict;
 use warnings;
 use XSLoader;
 use v5.8.0;
-use Template::Alloy 1.002;
+use Template::Alloy 1.015;
 use base qw(Template::Alloy);
 
-our $VERSION = '1.003';
+our $VERSION = '1.004';
 XSLoader::load('Template::Alloy::XS', $VERSION);
 
 ### method used for debugging XS
