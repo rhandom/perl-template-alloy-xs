@@ -39,6 +39,8 @@ static SV* call_sv_with_args (SV* code, SV* self, AV* args, I32 flags, SV* optio
     PUSHMARK(SP);
     if (sv_defined(optional_obj)) XPUSHs(optional_obj);
     for (i = 0; i <= count; i++) {
+      SV* _var;
+      AV* var;
         svp = av_fetch(args, i, FALSE);
         SvGETMAGIC(*svp);
         PUSHMARK(SP);
@@ -378,21 +380,31 @@ play_expr (_self, _var, ...)
     I32 i    = 0;
     I32 n;
     SV** svp;
+    SV** args_svp;
 
     svp = hv_fetch(Args, "return_ref", 10, FALSE);
     bool return_ref = (svp && SvTRUE(*svp));
     I32 var_len     = av_len(var);
 
     /* determine the top level of this particular variable access */
-
     SV* ref;
-    svp = av_fetch(var, i++, FALSE);
-    SvGETMAGIC(*svp);
-    SV* name = (SV*)(*svp);
+    SV* name;
+    AV* args;
+    if (i > var_len) {
+        name = &PL_sv_undef;
+    } else {
+        svp = av_fetch(var, i++, FALSE);
+        SvGETMAGIC(*svp);
+        name = (SV*)(*svp);
+    }
 
-    svp = av_fetch(var, i++, FALSE);
-    SvGETMAGIC(*svp);
-    AV* args = (SvROK(*svp) && SvTYPE(SvRV(*svp)) == SVt_PVAV) ? (AV*)SvRV(*svp) : (AV*)sv_2mortal((SV*)newAV());
+    if (i > var_len) {
+        args = (AV*)sv_2mortal((SV*)newAV());
+    } else {
+        args_svp = av_fetch(var, i++, FALSE);
+        SvGETMAGIC(*args_svp);
+        args = (SvROK(*args_svp) && SvTYPE(SvRV(*args_svp)) == SVt_PVAV) ? (AV*)SvRV(*args_svp) : (AV*)sv_2mortal((SV*)newAV());
+    }
 
     /* warn "play_expr: begin \"$name\"\n" if trace; */
     if (SvROK(name)) {
@@ -415,6 +427,10 @@ play_expr (_self, _var, ...)
                 SPAGAIN;
                 PUTBACK;
                 XSRETURN(n);
+            } else if (sv_eq(*svp, sv_2mortal(newSVpv("-temp-", 0)))) {
+                svp = av_fetch((AV*)SvRV(name), 2, FALSE);
+                SvGETMAGIC(*svp);
+                ref = (SV*)(*svp);
             } else {
                 PUSHMARK(SP);
                 XPUSHs(_self);
