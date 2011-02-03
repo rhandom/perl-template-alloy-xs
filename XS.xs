@@ -1037,6 +1037,19 @@ play_expr (_self, _var, ...)
 
     /* allow for undefinedness */
     if (! sv_defined(ref)) {
+        svp = hv_fetch(self, "STRICT", 6, FALSE);
+        if (svp && SvTRUE(*svp)) {
+            PUSHMARK(SP);
+            XPUSHs(_self);
+            XPUSHs(_var);
+            PUTBACK;
+            n = call_method("strict_throw", G_VOID); /* will die */
+            SPAGAIN;
+            I32 j;
+            for (j = 1; j < n; j++) POPs;
+            PUTBACK;
+        }
+
         svp = hv_fetch(self, "_debug_undef", 12, FALSE);
         if (svp && SvTRUE(*svp)) {
             PUSHMARK(SP);
@@ -1409,7 +1422,6 @@ set_variable (_self, _var, val, ...)
             HV* stash = SvSTASH((SV*)SvRV(ref));
             GV* gv = gv_fetchmethod_autoload(stash, name_c, 1);
             bool lvalueish = FALSE;
-            _debug(_self,newSVpv("hey",0));
             if (hv_exists(self, "CALL_CONTEXT", 12)
                 && (svp = hv_fetch(self, "CALL_CONTEXT", 12, FALSE))) {
                 SvGETMAGIC(*svp);
