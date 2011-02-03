@@ -927,44 +927,55 @@ play_expr (_self, _var, ...)
 
                 HV* stash = SvSTASH((SV*)SvRV(ref));
                 GV* gv = gv_fetchmethod_autoload(stash, name_c, 1);
-
-                if (sv_defined(type) && sv_eq(type, sv_2mortal(newSVpv("item", 0)))) {
-                    if (! gv) {
-                        char* package = (char*)sv_reftype(SvRV(ref), 1);
-                        croak("Can't locate object method \"%s\" via package %s", name_c, package);
-                    } else {
-                        ref = call_sv_with_args((SV*)GvCV(gv), _self, args, G_SCALAR, ref, 0);
-                        if (! sv_defined(ref)) break;
-                        continue;
-                    }
+                if (! gv && sv_defined(type)
+                    && (sv_eq(type, sv_2mortal(newSVpv("item", 0))) || sv_eq(type, sv_2mortal(newSVpv("list", 0))))) {
+                    char* package = (char*)sv_reftype(SvRV(ref), 1);
+                    croak("Can't locate object method \"%s\" via package %s", name_c, package);
                 }
 
-                if (gv) {
-                    ref = call_sv_with_args((SV*)GvCV(gv), _self, args, G_ARRAY, ref, 1);
-
-                    if (!sv_defined(ref)) ref = sv_2mortal((SV*)newAV());
-                    if (sv_defined(type) && sv_eq(type, sv_2mortal(newSVpv("list", 0)))) continue;
-                    AV* ref_av = (AV*)SvRV(ref);
-                    I32 _len = av_len(ref_av);
-                    if (_len == -1) {
+                if (sv_defined(type) && sv_eq(type, sv_2mortal(newSVpv("item", 0)))) {
+                    ref = call_sv_with_args((SV*)GvCV(gv), _self, args, G_SCALAR, ref, 0);
+                    if (! sv_defined(ref)) break;
+                    continue;
+                } else if (gv) {
+                     ref = call_sv_with_args((SV*)GvCV(gv), _self, args, G_ARRAY | G_EVAL, ref, 1);
+                     if (SvTRUE(ERRSV)) {
+                         if (sv_defined(type) && sv_eq(type, sv_2mortal(newSVpv("list", 0)))) (void)die(Nullch); /* rethrow */
+                         SV* errsv = get_sv("@", 0);
+                         if (SvROK(errsv)) (void)die(Nullch); /* rethrow */
+                         /* 
+                             char* package = (char*)sv_reftype(SvRV(ref), 1);
+                             croak("Can't locate object method \"%s\" via package %s", name_c, package);
+                             die $@ if $@ !~ /Can\'t locate object method "\Q$name\E" via package "\Q$class\E"/;
+                         */
+                         /* now fail down to normal lookup */
+                    } else {
+                        if (!sv_defined(ref)) {
+                            ref = sv_2mortal((SV*)newAV());
+                        }
+                        if (sv_defined(type) && sv_eq(type, sv_2mortal(newSVpv("list", 0)))) continue;
+                        AV* ref_av = (AV*)SvRV(ref);
+                        I32 _len = av_len(ref_av);
+                        if (_len == -1) {
+                            ref = &PL_sv_undef;
+                            break;
+                        }
+                        svp = av_fetch(ref_av, 0, FALSE);
+                        if (svp) SvGETMAGIC(*svp);
+                        if (svp && sv_defined(*svp)) {
+                          if (_len == 0) ref = *svp;
+                          continue;
+                        }
+                        svp = av_fetch(ref_av, 1, FALSE);
+                        if (svp) SvGETMAGIC(*svp);
+                        if (svp && sv_defined(*svp)) { // TT behavior - why not just throw ?
+                            SV* errsv = get_sv("@", GV_ADD);
+                            sv_setsv(errsv, *svp);
+                           (void)die(Nullch);
+                        }
                         ref = &PL_sv_undef;
                         break;
                     }
-                    svp = av_fetch(ref_av, 0, FALSE);
-                    if (svp) SvGETMAGIC(*svp);
-                    if (svp && sv_defined(*svp)) {
-                      if (_len == 0) ref = *svp;
-                      continue;
-                    }
-                    svp = av_fetch(ref_av, 1, FALSE);
-                    if (svp) SvGETMAGIC(*svp);
-                    if (svp && sv_defined(*svp)) { // TT behavior - why not just throw ?
-                        SV* errsv = get_sv("@", GV_ADD);
-                        sv_setsv(errsv, *svp);
-                       (void)die(Nullch);
-                    }
-                    ref = &PL_sv_undef;
-                    break;
                 }
             }
 
