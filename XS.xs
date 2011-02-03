@@ -9,12 +9,9 @@
 
 /* #define sv_defined(sv) (sv && (SvIOK(sv) || SvNOK(sv) || SvPOK(sv) || SvROK(sv))) */
 #define sv_defined(sv) (sv && SvOK(sv))
-
-#if 1
-#define debug(self, data) _debug(self, data)
-#else
-#define debug(self, data)
-#endif
+#define CALL_CTX_ITEM 0
+#define CALL_CTX_LIST 1
+#define CALL_CTX_SMART 2
 
 /* /----------------------------------------------------------------/// */
 
@@ -32,7 +29,7 @@ void _debug (SV* self, SV* data) {
     return;
 }
 
-static SV* call_sv_with_args (SV* code, SV* self, AV* args, I32 flags, SV* optional_obj, I32 as_array) {
+static SV* call_sv_with_args (SV* code, SV* self, AV* args, I32 flags, SV* optional_obj, I32 call_ctx) {
     dSP;
     I32 n, i, j, count = av_len(args);
     SV** svp;
@@ -57,38 +54,52 @@ static SV* call_sv_with_args (SV* code, SV* self, AV* args, I32 flags, SV* optio
     SPAGAIN;
 
     SV* ref;
-    if (n || as_array == 1) {
-        SV* result = POPs;
-        if (sv_defined(result)) {
-            if (as_array == 0 && (n == 1 || flags & G_SCALAR)) {
-                ref = result;
-            } else {
-                AV* results = newAV();
-                if (n) {
-                    av_extend(results, n - 1);
-                    av_store(results, n - 1, result);
-                    for (i = n - 2; i >= 0; i--) av_store(results, i, (SV*)POPs);
-                }
-                ref = newRV_noinc((SV*)results);
-            }
-            PUTBACK;
-        } else {
-            result = POPs;
-            for (i = 1; i < n; i++) POPs;
-            PUTBACK;
-            if (sv_defined(result)) {
-                SV* errsv = get_sv("@", TRUE);
-                sv_setsv(errsv, result);
-                (void)die(Nullch);
-            } else {
-                ref = &PL_sv_undef;
-            }
-        }
-    } else {
-        PUTBACK;
+    if (flags & G_EVAL && SvTRUE(ERRSV)) {
+        for (i = 0; i < n; i++) POPs;
         ref = &PL_sv_undef;
+    } else if (call_ctx == CALL_CTX_ITEM) {
+        ref = (n == 0) ? &PL_sv_undef : POPs;
+        for (i = 1; i < n; i++) POPs;
+    } else if (call_ctx == CALL_CTX_LIST) {
+        AV* results = newAV();
+        if (n) {
+            av_extend(results, n - 1);
+            for (i = n - 1; i >= 0; i--) av_store(results, i, (SV*)POPs);
+        }
+        ref = newRV_noinc((SV*)results);
+    } else if (call_ctx == CALL_CTX_SMART) {
+        if (flags & G_EVAL && SvTRUE(ERRSV)) return &PL_sv_undef;
+        if (n) {
+            SV* result = POPs;
+            if (sv_defined(result)) {
+                if (n == 1) {
+                    ref = result;
+                } else {
+                    AV* results = newAV();
+                    if (n) {
+                        av_extend(results, n - 1);
+                        av_store(results, n - 1, result);
+                        for (i = n - 2; i >= 0; i--) av_store(results, i, (SV*)POPs);
+                    }
+                    ref = newRV_noinc((SV*)results);
+                }
+            } else {
+                result = POPs;
+                for (i = 1; i < n; i++) POPs;
+                if (sv_defined(result)) {
+                    PUTBACK;
+                    SV* errsv = get_sv("@", TRUE);
+                    sv_setsv(errsv, result);
+                    (void)die(Nullch);
+                } else {
+                    ref = &PL_sv_undef;
+                }
+            }
+        } else {
+            ref = &PL_sv_undef;
+        }
     }
-
+    PUTBACK;
     return ref;
 }
 
@@ -588,36 +599,14 @@ play_expr (_self, _var, ...)
                 type = (SV*)(*svp);
             }
             if (sv_defined(type) && sv_eq(type, sv_2mortal(newSVpv("item", 0)))) {
-                ref = call_sv_with_args(ref, _self, args, G_SCALAR, Nullsv, 0);
+                ref = call_sv_with_args(ref, _self, args, G_SCALAR, Nullsv, CALL_CTX_ITEM);
+                if (! sv_defined(ref)) break;
+            } else if (sv_defined(type) && sv_eq(type, sv_2mortal(newSVpv("list", 0)))) {
+                ref = call_sv_with_args(ref, _self, args, G_ARRAY, Nullsv, CALL_CTX_LIST);
                 if (! sv_defined(ref)) break;
             } else {
-                ref = call_sv_with_args(ref, _self, args, G_ARRAY, Nullsv, 1);
-                if (!sv_defined(ref)) ref = sv_2mortal((SV*)newAV());
-                if (!sv_defined(type) || 0 == sv_eq(type, sv_2mortal(newSVpv("list", 0)))) {
-                    AV* ref_av = (AV*)SvRV(ref);
-                    I32 _len = av_len(ref_av);
-                    if (_len == -1) {
-                        ref = &PL_sv_undef;
-                        break;
-                    }
-                    svp = av_fetch(ref_av, 0, FALSE);
-                    if (svp) SvGETMAGIC(*svp);
-                    if (svp && sv_defined(*svp)) {
-                        if (_len == 0) ref = *svp;
-                    } else {
-                        svp = av_fetch(ref_av, 1, FALSE);
-                        if (svp) {
-                            SvGETMAGIC(*svp);
-                            if (sv_defined(*svp)) { // TT behavior - why not just throw ?
-                                 SV* errsv = get_sv("@", GV_ADD);
-                                 sv_setsv(errsv, *svp);
-                                 (void)die(Nullch);
-                            }
-                        }
-                        ref = &PL_sv_undef;
-                        break;
-                    }
-                }
+                ref = call_sv_with_args(ref, _self, args, G_ARRAY, Nullsv, CALL_CTX_SMART);
+                if (! sv_defined(ref)) break;
             }
         }
 
@@ -690,7 +679,7 @@ play_expr (_self, _var, ...)
                 && SvROK(table)
                 && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
                 SvGETMAGIC(*svp);
-                ref = call_sv_with_args(*svp, _self, args, G_SCALAR, ref, 0);
+                ref = call_sv_with_args(*svp, _self, args, G_SCALAR, ref, CALL_CTX_SMART);
 
             } else if ((table = get_sv("Template::Alloy::LIST_OPS", FALSE)) /* auto-promote to list and use list op */
                 && SvROK(table)
@@ -698,7 +687,7 @@ play_expr (_self, _var, ...)
                 SvGETMAGIC(*svp);
                 AV* array = newAV();
                 av_push(array, ref);
-                ref = call_sv_with_args(*svp, _self, args, G_SCALAR, newRV_noinc((SV*)array), 0);
+                ref = call_sv_with_args(*svp, _self, args, G_SCALAR, newRV_noinc((SV*)array), CALL_CTX_SMART);
             } else {
                 SV* filter = Nullsv;
                 if(svp = hv_fetch(self, "FILTERS", 7, FALSE)) { /* filter configured in Template args */
@@ -934,48 +923,28 @@ play_expr (_self, _var, ...)
                 }
 
                 if (sv_defined(type) && sv_eq(type, sv_2mortal(newSVpv("item", 0)))) {
-                    ref = call_sv_with_args((SV*)GvCV(gv), _self, args, G_SCALAR, ref, 0);
+                    ref = call_sv_with_args((SV*)GvCV(gv), _self, args, G_SCALAR, ref, CALL_CTX_ITEM);
+                    if (! sv_defined(ref)) break;
+                    continue;
+                } else if (sv_defined(type) && sv_eq(type, sv_2mortal(newSVpv("list", 0)))) {
+                    ref = call_sv_with_args((SV*)GvCV(gv), _self, args, G_ARRAY, ref, CALL_CTX_LIST);
                     if (! sv_defined(ref)) break;
                     continue;
                 } else if (gv) {
-                     ref = call_sv_with_args((SV*)GvCV(gv), _self, args, G_ARRAY | G_EVAL, ref, 1);
-                     if (SvTRUE(ERRSV)) {
-                         if (sv_defined(type) && sv_eq(type, sv_2mortal(newSVpv("list", 0)))) (void)die(Nullch); /* rethrow */
-                         SV* errsv = get_sv("@", 0);
-                         if (SvROK(errsv)) (void)die(Nullch); /* rethrow */
-                         /* 
-                             char* package = (char*)sv_reftype(SvRV(ref), 1);
-                             croak("Can't locate object method \"%s\" via package %s", name_c, package);
-                             die $@ if $@ !~ /Can\'t locate object method "\Q$name\E" via package "\Q$class\E"/;
-                         */
-                         /* now fail down to normal lookup */
-                    } else {
-                        if (!sv_defined(ref)) {
-                            ref = sv_2mortal((SV*)newAV());
-                        }
-                        if (sv_defined(type) && sv_eq(type, sv_2mortal(newSVpv("list", 0)))) continue;
-                        AV* ref_av = (AV*)SvRV(ref);
-                        I32 _len = av_len(ref_av);
-                        if (_len == -1) {
-                            ref = &PL_sv_undef;
-                            break;
-                        }
-                        svp = av_fetch(ref_av, 0, FALSE);
-                        if (svp) SvGETMAGIC(*svp);
-                        if (svp && sv_defined(*svp)) {
-                          if (_len == 0) ref = *svp;
-                          continue;
-                        }
-                        svp = av_fetch(ref_av, 1, FALSE);
-                        if (svp) SvGETMAGIC(*svp);
-                        if (svp && sv_defined(*svp)) { // TT behavior - why not just throw ?
-                            SV* errsv = get_sv("@", GV_ADD);
-                            sv_setsv(errsv, *svp);
-                           (void)die(Nullch);
-                        }
-                        ref = &PL_sv_undef;
-                        break;
-                    }
+                     SV* newref = call_sv_with_args((SV*)GvCV(gv), _self, args, G_ARRAY | G_EVAL, ref, CALL_CTX_SMART);
+                     if (!SvTRUE(ERRSV)) {
+                         ref = newref;
+                         continue;
+                     }
+                     if (sv_defined(type) && sv_eq(type, sv_2mortal(newSVpv("list", 0)))) (void)die(Nullch); /* rethrow */
+                     SV* errsv = get_sv("@", 0);
+                     if (SvROK(errsv)) (void)die(Nullch); /* rethrow */
+                     /*
+                         char* package = (char*)sv_reftype(SvRV(ref), 1);
+                         croak("Can't locate object method \"%s\" via package %s", name_c, package);
+                         die $@ if $@ !~ /Can\'t locate object method "\Q$name\E" via package "\Q$class\E"/;
+                     */
+                     /* now fail down to normal lookup */
                 }
             }
 
@@ -996,7 +965,7 @@ play_expr (_self, _var, ...)
                     if (SvROK(table)
                         && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
                         SvGETMAGIC(*svp);
-                        ref = call_sv_with_args(*svp, _self, args, G_SCALAR, ref, 0);
+                        ref = call_sv_with_args(*svp, _self, args, G_SCALAR, ref, CALL_CTX_SMART);
                     } else if ((svp = hv_fetch(Args, "is_namespace_during_compile", 27, FALSE))
                                && SvTRUE(*svp)) {
                         XPUSHs(_var);
@@ -1050,7 +1019,7 @@ play_expr (_self, _var, ...)
                     if (SvROK(table)
                         && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
                         SvGETMAGIC(*svp);
-                        ref = call_sv_with_args(*svp, _self, args, G_SCALAR, ref, 0);
+                        ref = call_sv_with_args(*svp, _self, args, G_SCALAR, ref, CALL_CTX_SMART);
                     } else {
                         ref = &PL_sv_undef;
                     }
@@ -1798,7 +1767,7 @@ set_variable (_self, _var, val, ...)
 
         /* check at each point if the returned thing was a code */
         if (SvROK(ref) && SvTYPE(SvRV(ref)) == SVt_PVCV) {
-            ref = call_sv_with_args(ref, _self, args, G_ARRAY, Nullsv, 0);
+            ref = call_sv_with_args(ref, _self, args, G_ARRAY, Nullsv, CALL_CTX_SMART);
             if (! sv_defined(ref)) {
                 XPUSHs(&PL_sv_undef);
                 XSRETURN(1);
@@ -1890,7 +1859,7 @@ set_variable (_self, _var, val, ...)
                     av_push(newargs, val);
                     args = newargs; /* newRV_noinc((SV*)newargs); */
                 }
-                ref = call_sv_with_args((SV*)GvCV(gv), _self, args, G_ARRAY, ref, 0);
+                ref = call_sv_with_args((SV*)GvCV(gv), _self, args, G_ARRAY, ref, CALL_CTX_SMART);
                 if (lvalueish || ! sv_defined(ref)) {
                     XPUSHs(&PL_sv_undef);
                     XSRETURN(1);
