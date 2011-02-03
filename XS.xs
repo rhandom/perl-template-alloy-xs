@@ -9,9 +9,10 @@
 
 /* #define sv_defined(sv) (sv && (SvIOK(sv) || SvNOK(sv) || SvPOK(sv) || SvROK(sv))) */
 #define sv_defined(sv) (sv && SvOK(sv))
-#define CALL_CTX_ITEM 0
-#define CALL_CTX_LIST 1
-#define CALL_CTX_SMART 2
+#define CALL_CTX_ITEM 1
+#define CALL_CTX_LIST 2
+#define CALL_CTX_SMART 4
+#define CALL_CTX_PASS_SELF 8
 
 /* /----------------------------------------------------------------/// */
 
@@ -34,6 +35,7 @@ static SV* call_sv_with_args (SV* code, SV* self, AV* args, I32 flags, SV* optio
     I32 n, i, j, count = av_len(args);
     SV** svp;
     PUSHMARK(SP);
+    if (call_ctx & CALL_CTX_PASS_SELF) XPUSHs(self);
     if (sv_defined(optional_obj)) XPUSHs(optional_obj);
     for (i = 0; i <= count; i++) {
       SV* _var;
@@ -57,17 +59,17 @@ static SV* call_sv_with_args (SV* code, SV* self, AV* args, I32 flags, SV* optio
     if (flags & G_EVAL && SvTRUE(ERRSV)) {
         for (i = 0; i < n; i++) POPs;
         ref = &PL_sv_undef;
-    } else if (call_ctx == CALL_CTX_ITEM) {
+    } else if (call_ctx & CALL_CTX_ITEM) {
         ref = (n == 0) ? &PL_sv_undef : POPs;
         for (i = 1; i < n; i++) POPs;
-    } else if (call_ctx == CALL_CTX_LIST) {
+    } else if (call_ctx & CALL_CTX_LIST) {
         AV* results = newAV();
         if (n) {
             av_extend(results, n - 1);
-            for (i = n - 1; i >= 0; i--) av_store(results, i, (SV*)POPs);
+            for (i = n - 1; i >= 0; i--) av_store(results, i, SvREFCNT_inc((SV*)POPs));
         }
         ref = newRV_noinc((SV*)results);
-    } else if (call_ctx == CALL_CTX_SMART) {
+    } else if (call_ctx & CALL_CTX_SMART) {
         if (flags & G_EVAL && SvTRUE(ERRSV)) return &PL_sv_undef;
         if (n) {
             SV* result = POPs;
@@ -78,8 +80,8 @@ static SV* call_sv_with_args (SV* code, SV* self, AV* args, I32 flags, SV* optio
                     AV* results = newAV();
                     if (n) {
                         av_extend(results, n - 1);
-                        av_store(results, n - 1, result);
-                        for (i = n - 2; i >= 0; i--) av_store(results, i, (SV*)POPs);
+                        av_store(results, n - 1, SvREFCNT_inc(result));
+                        for (i = n - 2; i >= 0; i--) av_store(results, i, SvREFCNT_inc((SV*)POPs));
                     }
                     ref = newRV_noinc((SV*)results);
                 }
@@ -546,7 +548,7 @@ play_expr (_self, _var, ...)
                 } else {
                     svp = hv_fetch(self, "VMETHOD_FUNCTIONS", 17, FALSE);
                     if (svp) SvGETMAGIC(*svp);
-                    SV* table = get_sv("Template::Alloy::SCALAR_OPS", TRUE);
+                    SV* table = get_sv("Template::Alloy::ITEM_OPS", TRUE);
                     if ((! sv_defined(*svp) || SvTRUE(*svp))
                         && SvROK(table)
                         && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
@@ -673,11 +675,17 @@ play_expr (_self, _var, ...)
         /* allow for scalar and filter access (this happens for every non virtual method call) */
         if (! SvROK(ref)) {
             SV* table;
-            if ((table = get_sv("Template::Alloy::SCALAR_OPS", FALSE))
+            if ((table = get_sv("Template::Alloy::ITEM_METHODS", FALSE))
                 && SvROK(table)
                 && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
                 SvGETMAGIC(*svp);
-                ref = call_sv_with_args(*svp, _self, args, G_SCALAR, ref, CALL_CTX_SMART);
+                ref = call_sv_with_args(*svp, _self, args, G_SCALAR, ref, CALL_CTX_ITEM | CALL_CTX_PASS_SELF);
+
+            } else if ((table = get_sv("Template::Alloy::ITEM_OPS", FALSE))
+                && SvROK(table)
+                && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
+                SvGETMAGIC(*svp);
+                ref = call_sv_with_args(*svp, _self, args, G_SCALAR, ref, CALL_CTX_ITEM);
 
             } else if ((table = get_sv("Template::Alloy::LIST_OPS", FALSE)) /* auto-promote to list and use list op */
                 && SvROK(table)
@@ -1031,23 +1039,19 @@ play_expr (_self, _var, ...)
     if (! sv_defined(ref)) {
         svp = hv_fetch(self, "_debug_undef", 12, FALSE);
         if (svp && SvTRUE(*svp)) {
-            svp = av_fetch(var, i - 2, FALSE);
-            if (svp) SvGETMAGIC(*svp);
-            SV* chunk = svp ? *svp : sv_2mortal(newSVpv("UNKNOWN", 0));
-            if (SvROK(chunk) && SvTYPE(SvRV(chunk)) == SVt_PVAV) {
-                PUSHMARK(SP);
-                XPUSHs(_self);
-                XPUSHs(chunk);
-                PUTBACK;
-                n = call_method("play_expr", G_SCALAR);
-                SPAGAIN;
-                chunk = (n >= 1) ? POPs : sv_2mortal(newSVpv("UNKNOWN", 0));
-                I32 j;
-                for (j = 1; j < n; j++) POPs;
-                PUTBACK;
-            }
+            PUSHMARK(SP);
+            XPUSHs(_self);
+            XPUSHs(_var);
+            PUTBACK;
+            n = call_method("tt_var_string", G_SCALAR);
+            SPAGAIN;
+            SV* varname = (n >= 1) ? (SV*)POPs : sv_2mortal(newSVpv("UNKNOWN", 0));
+            I32 j;
+            for (j = 1; j < n; j++) POPs;
+            PUTBACK;
+
             SV* msg = sv_2mortal(newSVpv("", 0));
-            sv_catsv(msg, (SV*)chunk);
+            sv_catsv(msg, (SV*)varname);
             sv_catpv(msg, " is undefined\n");
             SV* errsv = get_sv("@", GV_ADD);
             sv_setsv(errsv, msg);
