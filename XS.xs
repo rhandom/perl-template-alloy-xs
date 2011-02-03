@@ -318,6 +318,10 @@ static void xs_throw (SV* self, const char* exception_type, SV* msg) {
     return;
 }
 
+static void xs_die (SV* obj) {
+  dSP;
+  return;
+}
 
 /* /----------------------------------------------------------------/// */
 
@@ -573,14 +577,50 @@ play_expr (_self, _var, ...)
 
         /* check at each point if the rurned thing was a code */
         if (SvROK(ref) && SvTYPE(SvRV(ref)) == SVt_PVCV) {
+            SV* type;
             if (return_ref && i >= var_len) {
                 XPUSHs(SvREFCNT_inc(ref));
                 XSRETURN(1);
             }
-            /* debug(_self, _var); */
-            ref = call_sv_with_args(ref, _self, args, G_ARRAY, Nullsv, 0);
-            if (! sv_defined(ref)) break;
+            if (hv_exists(self, "CALL_CONTEXT", 12)
+                && (svp = hv_fetch(self, "CALL_CONTEXT", 12, FALSE))) {
+                SvGETMAGIC(*svp);
+                type = (SV*)(*svp);
+            }
+            if (sv_defined(type) && sv_eq(type, sv_2mortal(newSVpv("item", 0)))) {
+                ref = call_sv_with_args(ref, _self, args, G_SCALAR, Nullsv, 0);
+                if (! sv_defined(ref)) break;
+            } else {
+                ref = call_sv_with_args(ref, _self, args, G_ARRAY, Nullsv, 1);
+                if (!sv_defined(ref)) ref = sv_2mortal((SV*)newAV());
+                if (!sv_defined(type) || 0 == sv_eq(type, sv_2mortal(newSVpv("list", 0)))) {
+                    AV* ref_av = (AV*)SvRV(ref);
+                    I32 _len = av_len(ref_av);
+                    if (_len == -1) {
+                        ref = &PL_sv_undef;
+                        break;
+                    }
+                    svp = av_fetch(ref_av, 0, FALSE);
+                    if (svp) SvGETMAGIC(*svp);
+                    if (svp && sv_defined(*svp)) {
+                        if (_len == 0) ref = *svp;
+                    } else {
+                        svp = av_fetch(ref_av, 1, FALSE);
+                        if (svp) {
+                            SvGETMAGIC(*svp);
+                            if (sv_defined(*svp)) { // TT behavior - why not just throw ?
+                                 SV* errsv = get_sv("@", GV_ADD);
+                                 sv_setsv(errsv, *svp);
+                                 (void)die(Nullch);
+                            }
+                        }
+                        ref = &PL_sv_undef;
+                        break;
+                    }
+                }
+            }
         }
+
 
         /* descend one chained level */
         if (i >= var_len) break;
@@ -912,13 +952,13 @@ play_expr (_self, _var, ...)
                     }
                     svp = av_fetch(ref_av, 0, FALSE);
                     if (svp) SvGETMAGIC(*svp);
-                    if (sv_defined(*svp)) {
+                    if (svp && sv_defined(*svp)) {
                       if (_len == 0) ref = *svp;
                       continue;
                     }
                     svp = av_fetch(ref_av, 1, FALSE);
                     if (svp) SvGETMAGIC(*svp);
-                    if (sv_defined(*svp)) { // TT behavior - why not just throw ?
+                    if (svp && sv_defined(*svp)) { // TT behavior - why not just throw ?
                         SV* errsv = get_sv("@", GV_ADD);
                         sv_setsv(errsv, *svp);
                        (void)die(Nullch);
