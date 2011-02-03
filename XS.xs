@@ -600,14 +600,12 @@ play_expr (_self, _var, ...)
             }
             if (sv_defined(type) && sv_eq(type, sv_2mortal(newSVpv("item", 0)))) {
                 ref = call_sv_with_args(ref, _self, args, G_SCALAR, Nullsv, CALL_CTX_ITEM);
-                if (! sv_defined(ref)) break;
             } else if (sv_defined(type) && sv_eq(type, sv_2mortal(newSVpv("list", 0)))) {
                 ref = call_sv_with_args(ref, _self, args, G_ARRAY, Nullsv, CALL_CTX_LIST);
-                if (! sv_defined(ref)) break;
             } else {
                 ref = call_sv_with_args(ref, _self, args, G_ARRAY, Nullsv, CALL_CTX_SMART);
-                if (! sv_defined(ref)) break;
             }
+            if (! sv_defined(ref)) break;
         }
 
 
@@ -934,9 +932,9 @@ play_expr (_self, _var, ...)
                      SV* newref = call_sv_with_args((SV*)GvCV(gv), _self, args, G_ARRAY | G_EVAL, ref, CALL_CTX_SMART);
                      if (!SvTRUE(ERRSV)) {
                          ref = newref;
+                         if (! sv_defined(ref)) break;
                          continue;
                      }
-                     if (sv_defined(type) && sv_eq(type, sv_2mortal(newSVpv("list", 0)))) (void)die(Nullch); /* rethrow */
                      SV* errsv = get_sv("@", 0);
                      if (SvROK(errsv)) (void)die(Nullch); /* rethrow */
                      /*
@@ -1214,56 +1212,71 @@ set_variable (_self, _var, val, ...)
         svp = av_fetch((AV*)SvRV(name), 0, FALSE);
         SvGETMAGIC(*svp);
         if (! sv_defined(*svp)) {
-            XPUSHs(&PL_sv_undef);
-            XSRETURN(1);
-        }
-
-        /* named access (ie via $name.foo) */
-        PUSHMARK(SP);
-        XPUSHs(_self);
-        XPUSHs(name); /* we could check if name is an array - but we will let the recursive call hit */
-        PUTBACK;
-        n = call_method("play_expr", G_SCALAR);
-        SPAGAIN;
-        name = POPs;
-        name_c = SvPV(name, name_len);
-        I32 j;
-        for (j = 1; j < n; j++) POPs;
-        PUTBACK;
-
-        if (! sv_defined(name)         /* no defined */
-            || name_is_private(name_c) /* don't allow vars that begin with _ */
-            || ! (svp = hv_fetch(self, "_vars", 5, FALSE)) /* no entry */
-            ) {
-            XPUSHs(&PL_sv_undef);
-            XSRETURN(1);
-        }
-
-        SvGETMAGIC(*svp);
-        ref = *svp;
-
-        HV* ref_hv = (HV*)SvRV(ref);
-        if (svp = hv_fetch(ref_hv, name_c, name_len, FALSE))
+            svp = av_fetch((AV*)SvRV(name), 1, FALSE);
             SvGETMAGIC(*svp);
+            if (!sv_defined(*svp)
+                && 0 == sv_eq(*svp, sv_2mortal(newSVpv("@()", 0)))
+                && 0 == sv_eq(*svp, sv_2mortal(newSVpv("$()", 0)))) {
+                XPUSHs(&PL_sv_undef);
+                XSRETURN(1);
+            }
+            PUSHMARK(SP); /* @() and $() call context operators can though */
+            XPUSHs(_self);
+            XPUSHs(name);
+            PUTBACK;
+            n = call_method("play_operator", G_SCALAR);
+            SPAGAIN;
+            ref = POPs;
+            I32 j;
+            for (j = 1; j < n; j++) POPs;
+            PUTBACK;
+        } else {
+            /* named access (ie via $name.foo) */
+            PUSHMARK(SP);
+            XPUSHs(_self);
+            XPUSHs(name); /* we could check if name is an array - but we will let the recursive call hit */
+            PUTBACK;
+            n = call_method("play_expr", G_SCALAR);
+            SPAGAIN;
+            name = POPs;
+            name_c = SvPV(name, name_len);
+            I32 j;
+            for (j = 1; j < n; j++) POPs;
+            PUTBACK;
 
-        if (i > var_len) {
-            SV* newval = newSVsv(val);
+            if (! sv_defined(name)         /* no defined */
+                || name_is_private(name_c) /* don't allow vars that begin with _ */
+                || ! (svp = hv_fetch(self, "_vars", 5, FALSE)) /* no entry */
+                ) {
+                XPUSHs(&PL_sv_undef);
+                XSRETURN(1);
+            }
 
-            if (svp) SvSetSV_nosteal(*svp, newval);
-            else     hv_store(ref_hv, name_c, name_len, newval, 0);
-
-            XPUSHs(val);
-            XSRETURN(1);
-        }
-
-        if (! svp || ! SvROK(*svp)) {
-            HV* newlevel = newHV();
-            hv_store(ref_hv, name_c, name_len, newRV_noinc((SV*)newlevel), 0);
-            svp = hv_fetch(ref_hv, name_c, name_len, FALSE);
             SvGETMAGIC(*svp);
-        }
-        ref = *svp;
+            ref = *svp;
 
+            HV* ref_hv = (HV*)SvRV(ref);
+            if (svp = hv_fetch(ref_hv, name_c, name_len, FALSE))
+                SvGETMAGIC(*svp);
+
+            if (i > var_len) {
+                SV* newval = newSVsv(val);
+
+                if (svp) SvSetSV_nosteal(*svp, newval);
+                else     hv_store(ref_hv, name_c, name_len, newval, 0);
+
+                XPUSHs(val);
+                XSRETURN(1);
+            }
+
+            if (! svp || ! SvROK(*svp)) {
+                HV* newlevel = newHV();
+                hv_store(ref_hv, name_c, name_len, newRV_noinc((SV*)newlevel), 0);
+                svp = hv_fetch(ref_hv, name_c, name_len, FALSE);
+                SvGETMAGIC(*svp);
+            }
+            ref = *svp;
+        }
     } else if (sv_defined(name)) {
         if (name_is_private(name_c) /* don't allow vars that begin with _ */
             || ! (svp = hv_fetch(self, "_vars", 5, FALSE)) /* no entry */
@@ -1303,7 +1316,19 @@ set_variable (_self, _var, val, ...)
 
         /* check at each point if the returned thing was a code */
         if (SvROK(ref) && SvTYPE(SvRV(ref)) == SVt_PVCV) {
-            ref = call_sv_with_args(ref, _self, args, G_ARRAY, Nullsv, CALL_CTX_SMART);
+            SV* type;
+            if (hv_exists(self, "CALL_CONTEXT", 12)
+                && (svp = hv_fetch(self, "CALL_CONTEXT", 12, FALSE))) {
+                SvGETMAGIC(*svp);
+                type = (SV*)(*svp);
+            }
+            if (sv_defined(type) && sv_eq(type, sv_2mortal(newSVpv("item", 0)))) {
+                ref = call_sv_with_args(ref, _self, args, G_SCALAR, Nullsv, CALL_CTX_ITEM);
+            } else if (sv_defined(type) && sv_eq(type, sv_2mortal(newSVpv("list", 0)))) {
+                ref = call_sv_with_args(ref, _self, args, G_ARRAY, Nullsv, CALL_CTX_LIST);
+            } else {
+                ref = call_sv_with_args(ref, _self, args, G_ARRAY, Nullsv, CALL_CTX_SMART);
+            }
             if (! sv_defined(ref)) {
                 XPUSHs(&PL_sv_undef);
                 XSRETURN(1);
@@ -1376,33 +1401,68 @@ set_variable (_self, _var, val, ...)
 
         /* method calls on objects */
         } else if (was_dot_call && sv_isobject(ref)) {
-            HV*  stash = SvSTASH((SV*) SvRV(ref));
-            GV*  gv    = gv_fetchmethod_autoload(stash, name_c, 1);
-            if (! gv) {
+            SV* type;
+            HV* stash = SvSTASH((SV*)SvRV(ref));
+            GV* gv = gv_fetchmethod_autoload(stash, name_c, 1);
+            bool lvalueish = FALSE;
+            _debug(_self,newSVpv("hey",0));
+            if (hv_exists(self, "CALL_CONTEXT", 12)
+                && (svp = hv_fetch(self, "CALL_CONTEXT", 12, FALSE))) {
+                SvGETMAGIC(*svp);
+                type = (SV*)(*svp);
+            }
+            if (! gv && sv_defined(type)
+                && (sv_eq(type, sv_2mortal(newSVpv("item", 0))) || sv_eq(type, sv_2mortal(newSVpv("list", 0))))) {
                 char* package = (char*)sv_reftype(SvRV(ref), 1);
-                croak("Can't locate object method \"%s\" via package \"%s\"", name_c, package);
-            } else {
-                bool lvalueish = FALSE;
-                if (i >= var_len) {
-                    lvalueish = TRUE;
-                    AV* newargs = newAV();
-                    I32 j;
-                    for (j = 0; j <= av_len(args); j++) {
-                        svp = av_fetch(args, j, FALSE);
-                        if (svp) SvGETMAGIC(*svp);
-                        av_push(newargs, svp ? *svp : &PL_sv_undef);
-                    }
-                    av_push(newargs, val);
-                    args = newargs; /* newRV_noinc((SV*)newargs); */
+                croak("Can't locate object method \"%s\" via package %s", name_c, package);
+            }
+            if (i >= var_len) {
+                lvalueish = TRUE;
+                AV* newargs = newAV();
+                I32 j;
+                for (j = 0; j <= av_len(args); j++) {
+                    svp = av_fetch(args, j, FALSE);
+                    if (svp) SvGETMAGIC(*svp);
+                    av_push(newargs, svp ? *svp : &PL_sv_undef);
                 }
-                ref = call_sv_with_args((SV*)GvCV(gv), _self, args, G_ARRAY, ref, CALL_CTX_SMART);
+                av_push(newargs, val);
+                args = newargs; /* newRV_noinc((SV*)newargs); */
+            }
+            if (sv_defined(type) && sv_eq(type, sv_2mortal(newSVpv("item", 0)))) {
+                ref = call_sv_with_args((SV*)GvCV(gv), _self, args, G_SCALAR, ref, CALL_CTX_ITEM);
                 if (lvalueish || ! sv_defined(ref)) {
                     XPUSHs(&PL_sv_undef);
                     XSRETURN(1);
                 }
                 continue;
+            } else if (sv_defined(type) && sv_eq(type, sv_2mortal(newSVpv("list", 0)))) {
+                ref = call_sv_with_args((SV*)GvCV(gv), _self, args, G_ARRAY, ref, CALL_CTX_LIST);
+                if (lvalueish || ! sv_defined(ref)) {
+                    XPUSHs(&PL_sv_undef);
+                    XSRETURN(1);
+                }
+                continue;
+            } else if (gv) {
+                 SV* newref = call_sv_with_args((SV*)GvCV(gv), _self, args, G_ARRAY | G_EVAL, ref, CALL_CTX_SMART);
+                 if (!SvTRUE(ERRSV)) {
+                     ref = newref;
+                     if (lvalueish || ! sv_defined(ref)) {
+                         XPUSHs(&PL_sv_undef);
+                         XSRETURN(1);
+                     }
+                     continue;
+                 }
+                 SV* errsv = get_sv("@", 0);
+                 if (SvROK(errsv)) (void)die(Nullch); /* rethrow */
+                 /*
+                     char* package = (char*)sv_reftype(SvRV(ref), 1);
+                     croak("Can't locate object method \"%s\" via package %s", name_c, package);
+                     die $@ if $@ !~ /Can\'t locate object method "\Q$name\E" via package "\Q$class\E"/;
+                 */
+                 /* now fail down to normal lookup */
             }
         }
+
 
         /* hash member access */
         if (SvTYPE(SvRV(ref)) == SVt_PVHV) {
