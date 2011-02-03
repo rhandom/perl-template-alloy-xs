@@ -18,7 +18,7 @@ BEGIN {
 };
 
 use strict;
-use Test::More tests => (! $is_tt ? 3038 : 661) - (! $five_six ? 0 : (2 * ($is_tt ? 1 : 2)));
+use Test::More tests => (! $is_tt ? 3074 : 661) - (! $five_six ? 0 : (3 * ($is_tt ? 1 : 2)));
 use constant test_taint => 0 && eval { require Taint::Runtime };
 
 use_ok($module);
@@ -110,7 +110,7 @@ local $INC{'FooTest2.pm'} = $0;
     package CallContext;
     sub new { my $class = shift; my $args = shift || {}; bless $args, $class }
     sub last_context { shift->{'last_context'} || '' }
-    sub call_me { shift->{'last_context'} = wantarray ? 'list' : defined(wantarray) ? 'scalar' : 'void' }
+    sub call_me { my $self = shift; $self->{'last_context'} = (wantarray ? 'list' : defined(wantarray) ? 'scalar' : 'void').(shift || '') }
     sub array   { return my @a = (1, 2, 3) }
     sub array2  { return my @a = (4) }
     sub list    { return (5, 6, 7) }
@@ -609,6 +609,16 @@ process_ok('[% 1.fmt("%-*s", 6) %]' => '1     ') if ! $is_tt;
 process_ok('[% [1,2].fmt("%-*s", "|", 6) %]' => '1     |2     ') if ! $is_tt;
 process_ok('[% {1=>2,3=>4}.fmt("%*s:%*s", "|", 3, 3) %]' => '  1:  2|  3:  4') if ! $is_tt;
 
+process_ok('[% foo %]', => '&amp;', {foo => '&', tt_config => [AUTO_FILTER => 'html']}) if ! $is_tt;
+process_ok('[% "&" %]', => '&amp;', {foo => '&', tt_config => [AUTO_FILTER => 'html']}) if ! $is_tt;
+process_ok('[% foo | none %]', => '&', {foo => '&', tt_config => [AUTO_FILTER => 'html']}) if ! $is_tt;
+process_ok('[% foo.bar %]', => '&amp;', {foo => {bar => '&'}, tt_config => [AUTO_FILTER => 'html']}) if ! $is_tt;
+process_ok('[% foo.bar | none %]', => '&', {foo => {bar => '&'}, tt_config => [AUTO_FILTER => 'html']}) if ! $is_tt;
+process_ok('[% GET foo %]', => '&amp;', {foo => '&', tt_config => [AUTO_FILTER => 'html']}) if ! $is_tt;
+process_ok('[% GET "&" %]', => '&amp;', {foo => '&', tt_config => [AUTO_FILTER => 'html']}) if ! $is_tt;
+process_ok('[% GET foo | none %]', => '&', {foo => '&', tt_config => [AUTO_FILTER => 'html']}) if ! $is_tt;
+process_ok('[% Text.length(foo) %]', => '1', {foo => '&', tt_config => [AUTO_FILTER => 'html']}) if ! $is_tt;
+
 ###----------------------------------------------------------------###
 print "### virtual objects ################################# $engine_option\n";
 
@@ -670,11 +680,15 @@ delete $cctx->{'data'};
 process_ok("[% cctx.dataref.foo = 7; cctx.dataref.foo %]" => "7", {cctx => $cctx});
 
 if (! $is_tt) {
-    process_ok('[% SET cctx.call_me    = 2 %][% cctx.last_context %]' => "list", {cctx => $cctx});
+    process_ok('[% SET cctx.call_me    = 2 %][% cctx.last_context %]' => "list2", {cctx => $cctx});
     delete $cctx->{'last_context'};
-    process_ok('[% SET @(cctx.call_me) = 3 %][% cctx.last_context %]' => "list", {cctx => $cctx});
+    process_ok('[% CALL @(cctx.call_me = 3) %][% cctx.last_context %]' => "list3", {cctx => $cctx});
     delete $cctx->{'last_context'};
-    process_ok('[% SET $(cctx.call_me) = 4 %][% cctx.last_context %]' => "scalar", {cctx => $cctx});
+    process_ok('[% CALL $(cctx.call_me = 4) %][% cctx.last_context %]' => "scalar4", {cctx => $cctx});
+    delete $cctx->{'last_context'};
+    process_ok('[% CONFIG CALL_CONTEXT => "list"; SET cctx.call_me = 3; CONFIG CALL_CONTEXT => "smart" %][% cctx.last_context %]' => "list3", {cctx => $cctx});
+    delete $cctx->{'last_context'};
+    process_ok('[% CONFIG CALL_CONTEXT => "item"; SET cctx.call_me = 4 %][% cctx.last_context %]' => "scalar4", {cctx => $cctx});
     delete $cctx->{'data'};
     process_ok('[% cctx.dataref.0.foo = 7; cctx.dataref.0.foo %]' => "7", {cctx => $cctx});
     delete $cctx->{'data'};
@@ -1567,6 +1581,8 @@ process_ok("[% CONFIG VMETHOD_FUNCTIONS => 0 %][% sprintf('%d %d', 7, 8) %] d" =
 process_ok("[% TRY; foo; CONFIG STRICT => 1; bar; CATCH; error; END %]" => 'var.undef error - undefined variable: bar in input text');
 process_ok("[% TRY; foo; CONFIG STRICT => 1; CONFIG STRICT => 0; bar; CATCH; error; END %]" => 'config.strict error - Cannot disable STRICT once it is enabled');
 process_ok("[% BLOCK foo; CONFIG STRICT => 1; baz; END; TRY; bam; PROCESS foo; bar; CATCH; error.type; END; bing %] - ok" => 'var.undef - ok'); # restricted to sub components
+
+process_ok('[% CONFIG AUTO_FILTER => "html"; foo %]', => '&amp;', {foo => '&'}) if ! $is_tt;
 }
 
 ###----------------------------------------------------------------###
