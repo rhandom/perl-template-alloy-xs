@@ -32,7 +32,7 @@ void _debug (SV* self, SV* data) {
     return;
 }
 
-static SV* call_sv_with_args (SV* code, SV* self, AV* args, I32 flags, SV* optional_obj) {
+static SV* call_sv_with_args (SV* code, SV* self, AV* args, I32 flags, SV* optional_obj, I32 as_array) {
     dSP;
     I32 n, i, j, count = av_len(args);
     SV** svp;
@@ -57,16 +57,18 @@ static SV* call_sv_with_args (SV* code, SV* self, AV* args, I32 flags, SV* optio
     SPAGAIN;
 
     SV* ref;
-    if (n) {
+    if (n || as_array == 1) {
         SV* result = POPs;
         if (sv_defined(result)) {
-            if (n == 1) {
+            if (as_array == 0 && (n == 1 || flags & G_SCALAR)) {
                 ref = result;
             } else {
                 AV* results = newAV();
-                av_extend(results, n - 1);
-                av_store(results, n - 1, result);
-                for (i = n - 2; i >= 0; i--) av_store(results, i, (SV*)POPs);
+                if (n) {
+                    av_extend(results, n - 1);
+                    av_store(results, n - 1, result);
+                    for (i = n - 2; i >= 0; i--) av_store(results, i, (SV*)POPs);
+                }
                 ref = newRV_noinc((SV*)results);
             }
             PUTBACK;
@@ -576,7 +578,7 @@ play_expr (_self, _var, ...)
                 XSRETURN(1);
             }
             /* debug(_self, _var); */
-            ref = call_sv_with_args(ref, _self, args, G_ARRAY, Nullsv);
+            ref = call_sv_with_args(ref, _self, args, G_ARRAY, Nullsv, 0);
             if (! sv_defined(ref)) break;
         }
 
@@ -648,7 +650,7 @@ play_expr (_self, _var, ...)
                 && SvROK(table)
                 && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
                 SvGETMAGIC(*svp);
-                ref = call_sv_with_args(*svp, _self, args, G_SCALAR, ref);
+                ref = call_sv_with_args(*svp, _self, args, G_SCALAR, ref, 0);
 
             } else if ((table = get_sv("Template::Alloy::LIST_OPS", FALSE)) /* auto-promote to list and use list op */
                 && SvROK(table)
@@ -656,7 +658,7 @@ play_expr (_self, _var, ...)
                 SvGETMAGIC(*svp);
                 AV* array = newAV();
                 av_push(array, ref);
-                ref = call_sv_with_args(*svp, _self, args, G_SCALAR, newRV_noinc((SV*)array));
+                ref = call_sv_with_args(*svp, _self, args, G_SCALAR, newRV_noinc((SV*)array), 0);
             } else {
                 SV* filter = Nullsv;
                 if(svp = hv_fetch(self, "FILTERS", 7, FALSE)) { /* filter configured in Template args */
@@ -872,19 +874,57 @@ play_expr (_self, _var, ...)
 
             /* method calls on objects */
             if (was_dot_call && sv_isobject(ref)) {
+                SV* type;
                 if (return_ref && i >= var_len) {
                     XPUSHs(SvREFCNT_inc(ref));
                     XSRETURN(1);
                 }
+                if (hv_exists(self, "CALL_CONTEXT", 12)
+                    && (svp = hv_fetch(self, "CALL_CONTEXT", 12, FALSE))) {
+                    SvGETMAGIC(*svp);
+                    type = (SV*)(*svp);
+                }
+
                 HV* stash = SvSTASH((SV*)SvRV(ref));
                 GV* gv = gv_fetchmethod_autoload(stash, name_c, 1);
-                if (! gv) {
-                    char* package = (char*)sv_reftype(SvRV(ref), 1);
-                    croak("Can't locate object method \"%s\" via package %s", name_c, package);
-                } else {
-                    ref = call_sv_with_args((SV*)GvCV(gv), _self, args, G_ARRAY, ref);
-                    if (! sv_defined(ref)) break;
-                    continue;
+
+                if (sv_defined(type) && sv_eq(type, sv_2mortal(newSVpv("item", 0)))) {
+                    if (! gv) {
+                        char* package = (char*)sv_reftype(SvRV(ref), 1);
+                        croak("Can't locate object method \"%s\" via package %s", name_c, package);
+                    } else {
+                        ref = call_sv_with_args((SV*)GvCV(gv), _self, args, G_SCALAR, ref, 0);
+                        if (! sv_defined(ref)) break;
+                        continue;
+                    }
+                }
+
+                if (gv) {
+                    ref = call_sv_with_args((SV*)GvCV(gv), _self, args, G_ARRAY, ref, 1);
+
+                    if (!sv_defined(ref)) ref = sv_2mortal((SV*)newAV());
+                    if (sv_defined(type) && sv_eq(type, sv_2mortal(newSVpv("list", 0)))) continue;
+                    AV* ref_av = (AV*)SvRV(ref);
+                    I32 _len = av_len(ref_av);
+                    if (_len == -1) {
+                        ref = &PL_sv_undef;
+                        break;
+                    }
+                    svp = av_fetch(ref_av, 0, FALSE);
+                    if (svp) SvGETMAGIC(*svp);
+                    if (sv_defined(*svp)) {
+                      if (_len == 0) ref = *svp;
+                      continue;
+                    }
+                    svp = av_fetch(ref_av, 1, FALSE);
+                    if (svp) SvGETMAGIC(*svp);
+                    if (sv_defined(*svp)) { // TT behavior - why not just throw ?
+                        SV* errsv = get_sv("@", GV_ADD);
+                        sv_setsv(errsv, *svp);
+                       (void)die(Nullch);
+                    }
+                    ref = &PL_sv_undef;
+                    break;
                 }
             }
 
@@ -905,7 +945,7 @@ play_expr (_self, _var, ...)
                     if (SvROK(table)
                         && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
                         SvGETMAGIC(*svp);
-                        ref = call_sv_with_args(*svp, _self, args, G_SCALAR, ref);
+                        ref = call_sv_with_args(*svp, _self, args, G_SCALAR, ref, 0);
                     } else if ((svp = hv_fetch(Args, "is_namespace_during_compile", 27, FALSE))
                                && SvTRUE(*svp)) {
                         XPUSHs(_var);
@@ -959,7 +999,7 @@ play_expr (_self, _var, ...)
                     if (SvROK(table)
                         && (svp = hv_fetch((HV*)SvRV(table), name_c, name_len, FALSE))) {
                         SvGETMAGIC(*svp);
-                        ref = call_sv_with_args(*svp, _self, args, G_SCALAR, ref);
+                        ref = call_sv_with_args(*svp, _self, args, G_SCALAR, ref, 0);
                     } else {
                         ref = &PL_sv_undef;
                     }
@@ -1707,7 +1747,7 @@ set_variable (_self, _var, val, ...)
 
         /* check at each point if the returned thing was a code */
         if (SvROK(ref) && SvTYPE(SvRV(ref)) == SVt_PVCV) {
-            ref = call_sv_with_args(ref, _self, args, G_ARRAY, Nullsv);
+            ref = call_sv_with_args(ref, _self, args, G_ARRAY, Nullsv, 0);
             if (! sv_defined(ref)) {
                 XPUSHs(&PL_sv_undef);
                 XSRETURN(1);
@@ -1799,7 +1839,7 @@ set_variable (_self, _var, val, ...)
                     av_push(newargs, val);
                     args = newargs; /* newRV_noinc((SV*)newargs); */
                 }
-                ref = call_sv_with_args((SV*)GvCV(gv), _self, args, G_ARRAY, ref);
+                ref = call_sv_with_args((SV*)GvCV(gv), _self, args, G_ARRAY, ref, 0);
                 if (lvalueish || ! sv_defined(ref)) {
                     XPUSHs(&PL_sv_undef);
                     XSRETURN(1);
