@@ -68,7 +68,7 @@ static SV* call_sv_with_args (SV* code, SV* self, AV* args, I32 flags, SV* optio
             av_extend(results, n - 1);
             for (i = n - 1; i >= 0; i--) av_store(results, i, SvREFCNT_inc((SV*)POPs));
         }
-        ref = newRV_noinc((SV*)results);
+        ref = newRV_inc((SV*)results);
     } else if (call_ctx & CALL_CTX_SMART) {
         if (flags & G_EVAL && SvTRUE(ERRSV)) return &PL_sv_undef;
         if (n) {
@@ -83,7 +83,7 @@ static SV* call_sv_with_args (SV* code, SV* self, AV* args, I32 flags, SV* optio
                         av_store(results, n - 1, SvREFCNT_inc(result));
                         for (i = n - 2; i >= 0; i--) av_store(results, i, SvREFCNT_inc((SV*)POPs));
                     }
-                    ref = newRV_noinc((SV*)results);
+                    ref = newRV_inc((SV*)results);
                 }
             } else {
                 result = POPs;
@@ -945,6 +945,11 @@ play_expr (_self, _var, ...)
                      }
                      SV* errsv = get_sv("@", 0);
                      if (SvROK(errsv)) (void)die(Nullch); /* rethrow */
+                     SV* msg = sv_2mortal(newSVpv("Can't locate object method \"", 0));
+                     sv_catpv(msg, name_c);
+                     sv_catpv(msg, "\" via package \"");
+                     sv_catpv(msg, (char*)sv_reftype(SvRV(ref), 1));
+                     sv_catpv(msg, "\"");
                      /*
                          char* package = (char*)sv_reftype(SvRV(ref), 1);
                          croak("Can't locate object method \"%s\" via package %s", name_c, package);
